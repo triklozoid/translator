@@ -1,0 +1,13 @@
+[package]
+name = "translator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gtk = { version = "0.9.6", package = "gtk4", features = ["v4_14"] }
+futures-util = "0.3"
+# Added for API calls and async runtime
+async-openai = "0.28.0" # Updated version from 0.20.1
+tokio = { version = "1", features = ["full"] } # Use "full" or specific features like "macros", "rt-multi-thread"
+dotenvy = "0.15" # For reading .env files (optional but good practice)
+lingua = { version = "1.7.0", features = ["english", "russian", "portuguese", "ukrainian"] } # Добавлена lingua с нужными языками

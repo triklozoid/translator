@@ -12,18 +12,23 @@ const CONFIG_FILE: &str = "config.toml";
 pub struct Config {
     pub api_url: String,
     pub model_version: String,
-    // Use TargetLanguage directly, implement Serialize/Deserialize for it
-    pub language: TargetLanguage,
+    // Renamed from language
+    pub last_target_language: TargetLanguage,
+    // Added primary and secondary languages
+    pub primary_language: TargetLanguage,
+    pub secondary_language: TargetLanguage,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
-            // Updated default API URL
             api_url: "https://openrouter.ai/api/v1".to_string(),
-            // Updated default model version
             model_version: "openai/gpt-4o-2024-11-20".to_string(),
-            language: TargetLanguage::English, // Default language remains English
+            // Default last target language
+            last_target_language: TargetLanguage::English,
+            // Default primary and secondary languages for auto-switch logic
+            primary_language: TargetLanguage::Russian,
+            secondary_language: TargetLanguage::English,
         }
     }
 }
@@ -87,11 +92,13 @@ pub fn load_config() -> Config {
                         return Config::default(); // Return default on read error
                     }
 
-                    match toml::from_str(&contents) {
+                    // Attempt to parse. If it fails, it might be an old format.
+                    match toml::from_str::<Config>(&contents) {
                         Ok(config) => config,
                         Err(e) => {
                             eprintln!("Failed to parse config file {:?}: {}. Using defaults.", path, e);
-                            // Consider backing up the invalid config file here
+                            // Consider backing up the invalid config file here before overwriting
+                            // For now, just return defaults. A new save will overwrite.
                             Config::default() // Return default on parse error
                         }
                     }

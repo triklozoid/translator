@@ -131,7 +131,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
             Err(_) => {
                 label_clone_init.set_text("Error: OPENROUTER_API_KEY environment variable not set.");
                 // Update button state even on error (show initial language from config)
-                let lang_to_show = config_rc_clone_init.borrow().language;
+                let lang_to_show = config_rc_clone_init.borrow().last_target_language; // Use last_target_language
                 // Use the imported clone macro
                 glib::idle_add_local_once(clone!(
                     pt_button_clone_init,
@@ -168,51 +168,51 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                     println!("Could not detect source language.");
                 }
 
-                // --- Automatic Language Switching Logic ---
-                let current_target_lang = config_rc_clone_init.borrow().language; // Get lang from config
-                let mut final_target_lang = current_target_lang; // Start with current
+                // --- Automatic Language Switching Logic (Updated Heuristic) ---
+                let (current_last_target_lang, primary_lang, secondary_lang) = {
+                    let config = config_rc_clone_init.borrow();
+                    (config.last_target_language, config.primary_language, config.secondary_language)
+                };
+                let mut final_target_lang = current_last_target_lang; // Start with current last target
 
                 match detected_source_lang {
-                    Some(TargetLanguage::Russian) => {
-                        if current_target_lang == TargetLanguage::Russian {
-                            final_target_lang = TargetLanguage::English;
-                            println!("Source Russian, Target Russian -> Switching target to EN");
-                        } else {
-                            println!("Source Russian, Target not Russian -> Keeping target {:?}", final_target_lang);
-                        }
+                    Some(detected) if detected == primary_lang => {
+                        final_target_lang = secondary_lang;
+                        println!("Source matches primary ({:?}) -> Switching target to secondary ({:?})", primary_lang, secondary_lang);
                     }
-                    Some(detected_lang) => {
-                        if detected_lang == current_target_lang {
-                            final_target_lang = TargetLanguage::Russian;
-                            println!("Source ({:?}) matches Target ({:?}) -> Switching target to RU", detected_lang, current_target_lang);
-                        } else {
-                            println!("Source ({:?}) doesn't match Target ({:?}) -> Keeping target {:?}", detected_lang, current_target_lang, final_target_lang);
-                        }
+                    Some(detected) if detected == secondary_lang => {
+                        final_target_lang = primary_lang;
+                        println!("Source matches secondary ({:?}) -> Switching target to primary ({:?})", secondary_lang, primary_lang);
+                    }
+                    Some(detected) => {
+                        // Source detected but is neither primary nor secondary
+                        println!("Source ({:?}) is not primary ({:?}) or secondary ({:?}) -> Keeping target {:?}", detected, primary_lang, secondary_lang, final_target_lang);
+                        // Keep final_target_lang as current_last_target_lang
                     }
                     None => {
+                        // Source language not detected
                         println!("Could not detect source language -> Keeping target {:?}", final_target_lang);
+                        // Keep final_target_lang as current_last_target_lang
                     }
                 }
 
 
-                // Update state and UI if language changed or just to set initial state
-                if final_target_lang != current_target_lang {
-                    // Update the language in the config and save it
+                // Update state (last_target_language) and save config if the target language changed
+                if final_target_lang != current_last_target_lang {
                     { // Create a scope for the mutable borrow
                         let mut config = config_rc_clone_init.borrow_mut();
-                        config.language = final_target_lang;
+                        config.last_target_language = final_target_lang; // Update last_target_language
                         if let Err(e) = config::save_config(&*config) { // Deref borrow to save
                              eprintln!("Failed to save config after auto-switch: {}", e);
                         } else {
-                             println!("Target language automatically changed to: {:?} and saved.", final_target_lang);
+                             println!("Target language automatically set to: {:?} and saved.", final_target_lang);
                         }
                     } // Mutable borrow drops here
                 } else {
                     println!("Target language remains: {:?}", final_target_lang);
                 }
 
-                // Update buttons in the main thread (always run this to set initial state correctly)
-                // Use the imported clone macro
+                // Update buttons in the main thread (always run this to set initial state correctly based on final_target_lang)
                 glib::idle_add_local_once(clone!(
                     pt_button_clone_init,
                     en_button_clone_init,
@@ -241,7 +241,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                      // Pass api_url and model_version to request_translation
                      request_translation(
                          text,
-                         final_target_lang,
+                         final_target_lang, // Use the determined target language
                          key.clone(),
                          api_url, // Pass value from config
                          model_version, // Pass value from config
@@ -256,7 +256,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 label_clone_init.set_text("Clipboard does not contain text.");
                 *original_text_rc_clone_init.borrow_mut() = None; // Ensure it's None
                 // Update button state even if clipboard is empty
-                let lang_to_show = config_rc_clone_init.borrow().language; // Get lang from config
+                let lang_to_show = config_rc_clone_init.borrow().last_target_language; // Use last_target_language
                  // Use the imported clone macro
                  glib::idle_add_local_once(clone!(
                     pt_button_clone_init,
@@ -279,7 +279,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 label_clone_init.set_text(&format!("Error reading clipboard: {}", e));
                 *original_text_rc_clone_init.borrow_mut() = None; // Ensure it's None
                  // Update button state even on error
-                let lang_to_show = config_rc_clone_init.borrow().language; // Get lang from config
+                let lang_to_show = config_rc_clone_init.borrow().last_target_language; // Use last_target_language
                  // Use the imported clone macro
                  glib::idle_add_local_once(clone!(
                     pt_button_clone_init,
@@ -324,14 +324,15 @@ pub fn build_ui(app: &Application, initial_config: Config) {
         move |toggled_button: &ToggleButton| {
             // Check if the button *became* active. Ignore deactivation events handled below.
             if toggled_button.is_active() {
-                let previously_selected_lang = config_rc_handler.borrow().language; // Get lang from config
+                // Get the language that was selected *before* this button was clicked
+                let previously_selected_lang = config_rc_handler.borrow().last_target_language; // Use last_target_language
 
                 // Only trigger if the language actually changed by user click
                 if button_lang != previously_selected_lang {
-                    // Update language in config and save
+                    // Update last_target_language in config and save
                     let (api_url, model_version) = { // Scope for mutable borrow
                         let mut config = config_rc_handler.borrow_mut();
-                        config.language = button_lang; // Update current language state in config
+                        config.last_target_language = button_lang; // Update current language state in config
                         // Save the updated config
                         if let Err(e) = config::save_config(&*config) { // Deref borrow to save
                             eprintln!("Failed to save config after user selection: {}", e);
@@ -377,7 +378,8 @@ pub fn build_ui(app: &Application, initial_config: Config) {
             } else {
                 // This block handles the case where the user tries to deactivate the *currently active* button.
                 // We want to prevent this, ensuring one button is always selected.
-                 if button_lang == config_rc_handler.borrow().language { // Check against config language
+                 // Check against last_target_language from config
+                 if button_lang == config_rc_handler.borrow().last_target_language {
                      // Re-activate the button in the next idle loop iteration.
                      // Use the imported clone macro
                      glib::idle_add_local_once(clone!(@strong button_rc => move || {

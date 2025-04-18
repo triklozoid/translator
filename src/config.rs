@@ -19,12 +19,11 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            // Note: Adjust the default API URL if async-openai uses a different one by default
-            // Or read from environment variables as a fallback?
-            api_url: "https://api.openrouter.ai/api/v1".to_string(), // Example OpenRouter URL
-            // Note: Adjust the default model if needed
-            model_version: "openai/gpt-3.5-turbo".to_string(), // Example OpenRouter model identifier
-            language: TargetLanguage::English, // Default language
+            // Updated default API URL
+            api_url: "https://openrouter.ai/api/v1".to_string(),
+            // Updated default model version
+            model_version: "openai/gpt-4o-2024-11-20".to_string(),
+            language: TargetLanguage::English, // Default language remains English
         }
     }
 }

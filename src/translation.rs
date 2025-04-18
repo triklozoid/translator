@@ -33,7 +33,7 @@ pub async fn request_translation(
     // Create Translation Request
     let request_result = CreateChatCompletionRequestArgs::default()
         .max_tokens(1024u16) // Increased token limit slightly
-        .model("openai/gpt-4o-mini") // Using gpt-4o-mini
+        .model("openai/gpt-4o-2024-11-20") // Using gpt-4o-mini
         .messages([
             ChatCompletionRequestSystemMessageArgs::default()
                 .content(format!("You are a helpful assistant that translates text into {}. Provide only the translation text and nothing else.", target_language.as_str()))

@@ -1,6 +1,7 @@
 // Declare modules
+mod config; // Added config module
 mod language;
-mod settings;
+// mod settings; // Removed settings module
 mod translation;
 mod ui;
 
@@ -14,14 +15,22 @@ const APP_ID: &str = "org.gtk_rs.ClipboardTranslator";
 #[tokio::main]
 async fn main() -> glib::ExitCode {
     // Load environment variables from .env file if present
-    dotenv().ok();
+    dotenv().ok(); // This is still useful for API keys, etc.
+
+    // Load configuration from file (or defaults if not found/invalid)
+    let config = config::load_config();
 
     // Create a new application
     let app = Application::builder().application_id(APP_ID).build();
 
+    // Clone the config to move into the closure
+    let initial_config = config.clone();
+
     // Connect to "activate" signal of `app`
-    // Use the build_ui function from the ui module
-    app.connect_activate(ui::build_ui);
+    // Pass the loaded initial config to the UI builder using a closure
+    app.connect_activate(move |app| {
+        ui::build_ui(app, initial_config.clone()); // Pass the config
+    });
 
     // Run the application
     app.run()

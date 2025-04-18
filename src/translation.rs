@@ -9,10 +9,13 @@ use async_openai::{
 use gtk::Label;
 
 // --- Helper function to request translation ---
+// Added api_url and model_version parameters
 pub async fn request_translation(
     text_to_translate: String,
     target_language: TargetLanguage,
     api_key: String,
+    api_url: String, // Added
+    model_version: String, // Added
     label_to_update: Label,
 ) {
     // Check if text is empty before making API call
@@ -23,17 +26,17 @@ pub async fn request_translation(
 
     label_to_update.set_label(&format!("Translating to {}...", target_language.code()));
 
-    // Configure API Client for OpenRouter
+    // Configure API Client using provided URL
     let config = OpenAIConfig::new()
         .with_api_key(api_key)
-        .with_api_base("https://openrouter.ai/api/v1");
+        .with_api_base(api_url); // Use api_url from config
 
     let client = Client::with_config(config);
 
-    // Create Translation Request
+    // Create Translation Request using provided model version
     let request_result = CreateChatCompletionRequestArgs::default()
         .max_tokens(1024u16) // Increased token limit slightly
-        .model("openai/gpt-4o-2024-11-20") // Using gpt-4o-mini
+        .model(model_version) // Use model_version from config
         .messages([
             ChatCompletionRequestSystemMessageArgs::default()
                 .content(format!("You are a helpful assistant that translates text into {}. Provide only the translation text and nothing else.", target_language.as_str()))

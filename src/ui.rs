@@ -6,7 +6,9 @@ use std::env;
 use lingua::{LanguageDetectorBuilder, Language};
 
 use crate::language::TargetLanguage;
-use crate::settings::{load_language_setting, save_language_setting};
+// Removed settings import
+// use crate::settings::{load_language_setting, save_language_setting};
+use crate::config::{self, Config}; // Import config module and Config struct
 use crate::translation::request_translation;
 use crate::clone; // Import the clone macro from main.rs or lib.rs where it's defined
 
@@ -26,13 +28,13 @@ fn update_active_button_simple(
 }
 
 
-pub fn build_ui(app: &Application) {
+// Modified function signature to accept initial Config
+pub fn build_ui(app: &Application, initial_config: Config) {
     // --- State Management ---
-    // Load initial language or default to English
-    let initial_language = load_language_setting().unwrap_or(TargetLanguage::English);
-    let current_language = Rc::new(RefCell::new(initial_language));
+    // Use the initial config passed from main
+    let config_rc = Rc::new(RefCell::new(initial_config));
     let original_clipboard_text = Rc::new(RefCell::new(None::<String>));
-    let api_key_rc = Rc::new(RefCell::new(None::<String>));
+    let api_key_rc = Rc::new(RefCell::new(None::<String>)); // Keep API key separate for now
 
     // --- Lingua Detector ---
     // Create the language detector. Consider creating it once if performance is critical.
@@ -109,7 +111,7 @@ pub fn build_ui(app: &Application) {
     let label_clone_init = label.clone();
     let original_text_rc_clone_init = original_clipboard_text.clone();
     let api_key_rc_clone_init = api_key_rc.clone();
-    let current_lang_rc_clone_init = current_language.clone(); // Holds loaded/default lang
+    let config_rc_clone_init = config_rc.clone(); // Clone the config Rc
     let detector_clone_init = detector.clone(); // Clone detector for the async block
 
     // Clone buttons for the async block to update UI state
@@ -120,15 +122,16 @@ pub fn build_ui(app: &Application) {
 
 
     glib::spawn_future_local(async move {
-        // 1. Read API Key once
+        // 1. Read API Key once (still reading from env var for now)
+        // TODO: Consider reading API key from config_rc as well, maybe fallback to env var
         match env::var("OPENROUTER_API_KEY") {
             Ok(key) => {
                 *api_key_rc_clone_init.borrow_mut() = Some(key);
             }
             Err(_) => {
                 label_clone_init.set_text("Error: OPENROUTER_API_KEY environment variable not set.");
-                // Update button state even on error (show default/loaded)
-                let lang_to_show = *current_lang_rc_clone_init.borrow();
+                // Update button state even on error (show initial language from config)
+                let lang_to_show = config_rc_clone_init.borrow().language;
                 // Use the imported clone macro
                 glib::idle_add_local_once(clone!(
                     pt_button_clone_init,
@@ -166,47 +169,44 @@ pub fn build_ui(app: &Application) {
                 }
 
                 // --- Automatic Language Switching Logic ---
-                let current_target_lang = *current_lang_rc_clone_init.borrow();
+                let current_target_lang = config_rc_clone_init.borrow().language; // Get lang from config
                 let mut final_target_lang = current_target_lang; // Start with current
 
                 match detected_source_lang {
                     Some(TargetLanguage::Russian) => {
-                        // Source is Russian
                         if current_target_lang == TargetLanguage::Russian {
-                            // Case 1: Source is Russian AND Target is Russian -> Target becomes English
                             final_target_lang = TargetLanguage::English;
                             println!("Source Russian, Target Russian -> Switching target to EN");
                         } else {
-                            // Case 3 (Implicit): Source is Russian, Target is not Russian -> Keep target
                             println!("Source Russian, Target not Russian -> Keeping target {:?}", final_target_lang);
-                            // No change needed: final_target_lang already holds current_target_lang
                         }
                     }
                     Some(detected_lang) => {
-                        // Source is NOT Russian (handled above)
                         if detected_lang == current_target_lang {
-                             // Case 2: Source is not Russian AND Source == Target -> Target becomes Russian
                             final_target_lang = TargetLanguage::Russian;
                             println!("Source ({:?}) matches Target ({:?}) -> Switching target to RU", detected_lang, current_target_lang);
                         } else {
-                            // Case 3 (Implicit): Source is not Russian, Source != Target -> Keep target
                             println!("Source ({:?}) doesn't match Target ({:?}) -> Keeping target {:?}", detected_lang, current_target_lang, final_target_lang);
-                            // No change needed
                         }
                     }
                     None => {
-                        // Case 3 (Implicit): Could not detect source language -> Keep target
                         println!("Could not detect source language -> Keeping target {:?}", final_target_lang);
-                        // No change needed
                     }
                 }
 
 
                 // Update state and UI if language changed or just to set initial state
                 if final_target_lang != current_target_lang {
-                    *current_lang_rc_clone_init.borrow_mut() = final_target_lang;
-                    save_language_setting(final_target_lang);
-                    println!("Target language automatically changed to: {:?}", final_target_lang);
+                    // Update the language in the config and save it
+                    { // Create a scope for the mutable borrow
+                        let mut config = config_rc_clone_init.borrow_mut();
+                        config.language = final_target_lang;
+                        if let Err(e) = config::save_config(&*config) { // Deref borrow to save
+                             eprintln!("Failed to save config after auto-switch: {}", e);
+                        } else {
+                             println!("Target language automatically changed to: {:?} and saved.", final_target_lang);
+                        }
+                    } // Mutable borrow drops here
                 } else {
                     println!("Target language remains: {:?}", final_target_lang);
                 }
@@ -231,8 +231,22 @@ pub fn build_ui(app: &Application) {
 
 
                 // 3. Perform translation with the determined final language
+                // Get API URL and Model from config
+                let (api_url, model_version) = {
+                    let config = config_rc_clone_init.borrow();
+                    (config.api_url.clone(), config.model_version.clone())
+                };
+
                 if let Some(key) = api_key_rc_clone_init.borrow().as_ref() {
-                     request_translation(text, final_target_lang, key.clone(), label_clone_init).await;
+                     // Pass api_url and model_version to request_translation
+                     request_translation(
+                         text,
+                         final_target_lang,
+                         key.clone(),
+                         api_url, // Pass value from config
+                         model_version, // Pass value from config
+                         label_clone_init
+                     ).await;
                 } else {
                      // Should not happen if API key check passed, but handle defensively
                      label_clone_init.set_text("Error retrieving API key for translation.");
@@ -242,7 +256,7 @@ pub fn build_ui(app: &Application) {
                 label_clone_init.set_text("Clipboard does not contain text.");
                 *original_text_rc_clone_init.borrow_mut() = None; // Ensure it's None
                 // Update button state even if clipboard is empty
-                let lang_to_show = *current_lang_rc_clone_init.borrow();
+                let lang_to_show = config_rc_clone_init.borrow().language; // Get lang from config
                  // Use the imported clone macro
                  glib::idle_add_local_once(clone!(
                     pt_button_clone_init,
@@ -265,7 +279,7 @@ pub fn build_ui(app: &Application) {
                 label_clone_init.set_text(&format!("Error reading clipboard: {}", e));
                 *original_text_rc_clone_init.borrow_mut() = None; // Ensure it's None
                  // Update button state even on error
-                let lang_to_show = *current_lang_rc_clone_init.borrow();
+                let lang_to_show = config_rc_clone_init.borrow().language; // Get lang from config
                  // Use the imported clone macro
                  glib::idle_add_local_once(clone!(
                     pt_button_clone_init,
@@ -302,7 +316,7 @@ pub fn build_ui(app: &Application) {
         other_buttons: Vec<Rc<RefCell<ToggleButton>>>
     | {
         // Clone necessary items for the handler closure
-        let lang_rc = current_language.clone();
+        let config_rc_handler = config_rc.clone(); // Clone config Rc
         let text_rc = original_clipboard_text.clone();
         let key_rc = api_key_rc.clone();
         let label_clone = label.clone();
@@ -310,15 +324,27 @@ pub fn build_ui(app: &Application) {
         move |toggled_button: &ToggleButton| {
             // Check if the button *became* active. Ignore deactivation events handled below.
             if toggled_button.is_active() {
-                let previously_selected_lang = *lang_rc.borrow();
+                let previously_selected_lang = config_rc_handler.borrow().language; // Get lang from config
 
                 // Only trigger if the language actually changed by user click
                 if button_lang != previously_selected_lang {
-                    *lang_rc.borrow_mut() = button_lang; // Update current language state
+                    // Update language in config and save
+                    let (api_url, model_version) = { // Scope for mutable borrow
+                        let mut config = config_rc_handler.borrow_mut();
+                        config.language = button_lang; // Update current language state in config
+                        // Save the updated config
+                        if let Err(e) = config::save_config(&*config) { // Deref borrow to save
+                            eprintln!("Failed to save config after user selection: {}", e);
+                            // Optionally notify the user via the UI label?
+                        } else {
+                            println!("Target language set by user to: {:?} and saved.", button_lang); // Log user change
+                        }
+                        // Read URL and Model *after* updating language, before dropping borrow
+                        (config.api_url.clone(), config.model_version.clone())
+                    }; // Mutable borrow drops here
 
                     // Deactivate other buttons (visually)
                     for other_btn_rc in &other_buttons {
-                         // Check if the other button is currently active before deactivating
                          if other_btn_rc.borrow().is_active() {
                             other_btn_rc.borrow().set_active(false);
                          }
@@ -328,21 +354,19 @@ pub fn build_ui(app: &Application) {
                         button_rc.borrow().set_active(true);
                     }
 
-
-                    // Save the new setting
-                    save_language_setting(button_lang);
-                    println!("Target language set by user to: {:?}", button_lang); // Log user change
-
                     // Get stored text and key
                     let maybe_text = text_rc.borrow().clone();
                     let maybe_key = key_rc.borrow().clone();
 
                     if let (Some(text), Some(key)) = (maybe_text, maybe_key) {
                          // Spawn a new future for the translation request
+                         // Pass api_url and model_version from config
                          glib::spawn_future_local(request_translation(
                              text,
                              button_lang, // Use newly set language
                              key,
+                             api_url, // Pass value from config
+                             model_version, // Pass value from config
                              label_clone.clone(),
                          ));
                     } else {
@@ -353,7 +377,7 @@ pub fn build_ui(app: &Application) {
             } else {
                 // This block handles the case where the user tries to deactivate the *currently active* button.
                 // We want to prevent this, ensuring one button is always selected.
-                 if button_lang == *lang_rc.borrow() {
+                 if button_lang == config_rc_handler.borrow().language { // Check against config language
                      // Re-activate the button in the next idle loop iteration.
                      // Use the imported clone macro
                      glib::idle_add_local_once(clone!(@strong button_rc => move || {

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH}; // For timestamp in backup filename
 
 const CONFIG_DIR: &str = "translator";
 const CONFIG_FILE: &str = "config.toml";
@@ -12,23 +13,36 @@ const CONFIG_FILE: &str = "config.toml";
 pub struct Config {
     pub api_url: String,
     pub model_version: String,
-    // Renamed from language
     pub last_target_language: TargetLanguage,
-    // Added primary and secondary languages
     pub primary_language: TargetLanguage,
     pub secondary_language: TargetLanguage,
+    // Added list of all available target languages for the UI
+    #[serde(default = "default_all_target_languages")] // Use default if missing in file
+    pub all_target_languages: Vec<TargetLanguage>,
 }
+
+// Function to provide default value for all_target_languages
+// Needs to be a separate function for use with #[serde(default = "...")]
+fn default_all_target_languages() -> Vec<TargetLanguage> {
+    vec![
+        TargetLanguage::Portuguese,
+        TargetLanguage::English,
+        TargetLanguage::Ukrainian,
+        TargetLanguage::Russian,
+    ]
+}
+
 
 impl Default for Config {
     fn default() -> Self {
         Config {
             api_url: "https://openrouter.ai/api/v1".to_string(),
             model_version: "openai/gpt-4o-2024-11-20".to_string(),
-            // Default last target language
             last_target_language: TargetLanguage::English,
-            // Default primary and secondary languages for auto-switch logic
             primary_language: TargetLanguage::Russian,
             secondary_language: TargetLanguage::English,
+            // Use the default function here as well
+            all_target_languages: default_all_target_languages(),
         }
     }
 }
@@ -92,13 +106,58 @@ pub fn load_config() -> Config {
                         return Config::default(); // Return default on read error
                     }
 
-                    // Attempt to parse. If it fails, it might be an old format.
+                    // Attempt to parse. If it fails, it might be an old format or missing fields.
                     match toml::from_str::<Config>(&contents) {
-                        Ok(config) => config,
+                        Ok(mut config) => {
+                            println!("Successfully loaded config from {:?}", path); // Log success
+                            // Ensure all_target_languages is not empty, use default if it is
+                            // (Should be handled by serde(default), but as a fallback)
+                            if config.all_target_languages.is_empty() {
+                                println!("Warning: 'all_target_languages' was empty in config file, using default list.");
+                                config.all_target_languages = default_all_target_languages();
+                                // Optionally re-save the config here if you want to fix the file
+                                // if let Err(e) = save_config(&config) {
+                                //     eprintln!("Failed to save config after fixing empty language list: {}", e);
+                                // }
+                            }
+                            // Ensure last_target_language is within all_target_languages
+                            // If not, reset it to the first language in the list or primary/secondary?
+                            if !config.all_target_languages.contains(&config.last_target_language) {
+                                let new_last_target = config.all_target_languages.first().cloned().unwrap_or_else(|| {
+                                    // Fallback if all_target_languages is somehow still empty
+                                    eprintln!("Error: 'all_target_languages' is empty even after default checks.");
+                                    TargetLanguage::English // Absolute fallback
+                                });
+                                println!(
+                                    "Warning: 'last_target_language' ({:?}) not found in 'all_target_languages'. Resetting to {:?}.",
+                                    config.last_target_language, new_last_target
+                                );
+                                config.last_target_language = new_last_target;
+                                // Optionally re-save config
+                            }
+                            // Log the loaded languages for debugging
+                            println!("Loaded 'all_target_languages': {:?}", config.all_target_languages);
+                            config
+                        },
                         Err(e) => {
-                            eprintln!("Failed to parse config file {:?}: {}. Using defaults.", path, e);
-                            // Consider backing up the invalid config file here before overwriting
-                            // For now, just return defaults. A new save will overwrite.
+                            // Print the detailed parsing error
+                            eprintln!("Failed to parse config file {:?}. Using defaults.", path);
+                            eprintln!("Parsing Error: {}", e);
+
+                            // --- Backup invalid config file ---
+                            let backup_path = path.with_extension({
+                                let timestamp = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .map(|d| d.as_secs())
+                                    .unwrap_or(0);
+                                format!("toml.invalid_{}", timestamp)
+                            });
+                            eprintln!("Backing up invalid config to {:?}", backup_path);
+                            if let Err(backup_err) = fs::rename(&path, &backup_path) {
+                                eprintln!("Failed to backup invalid config file: {}", backup_err);
+                            }
+                            // --- End backup ---
+
                             Config::default() // Return default on parse error
                         }
                     }
@@ -133,8 +192,17 @@ pub fn save_config(config: &Config) -> Result<(), std::io::Error> {
     let toml_string = toml::to_string_pretty(config)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("TOML serialization error: {}", e)))?;
 
-    let mut file = fs::File::create(&path)?; // Create or truncate the file
-    file.write_all(toml_string.as_bytes())?;
+    // Use temp file writing to avoid corrupting the file if saving is interrupted
+    let temp_path = path.with_extension("tmp");
+    { // Scope for file writing
+        let mut file = fs::File::create(&temp_path)?;
+        file.write_all(toml_string.as_bytes())?;
+        file.sync_all()?; // Ensure data is written to disk
+    } // File is closed here
+
+    // Rename the temporary file to the final config file name
+    fs::rename(&temp_path, &path)?;
+
     println!("Config saved to {:?}", path); // Log success
     Ok(())
 }

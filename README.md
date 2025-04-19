@@ -67,13 +67,13 @@ The application creates a configuration file at `~/.config/translator/config.tom
 ```toml
 api_url = "https://openrouter.ai/api/v1"
 model_version = "openai/gpt-4o"
-primary_language = "RU"
-secondary_language = "EN"
-all_target_languages = ["EN", "RU", "PT", "UK", "DE", "FR", "ES", "IT", "PL"]
+primary_language = "EN"
+secondary_language = "FR"
+all_target_languages = ["EN", "FR", "IT", "PL"]
 ```
 
-- `primary_language`: Your main language (default: Russian)
-- `secondary_language`: Your second most used language (default: English)
+- `primary_language`: Your main language (default: English)
+- `secondary_language`: Your second most used language (default: French)
 - `all_target_languages`: List of languages available in the UI
 - `api_url`: API endpoint for translations
 - `model_version`: AI model to use for translations

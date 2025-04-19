@@ -109,12 +109,7 @@ pub struct Config {
 fn default_all_target_languages() -> Vec<Language> {
     vec![
         Language::from_iso_code_639_1(&IsoCode639_1::from_str("EN").unwrap()), // English
-        Language::from_iso_code_639_1(&IsoCode639_1::from_str("RU").unwrap()), // Russian
-        Language::from_iso_code_639_1(&IsoCode639_1::from_str("PT").unwrap()), // Portuguese
-        Language::from_iso_code_639_1(&IsoCode639_1::from_str("UK").unwrap()), // Ukrainian
-        Language::from_iso_code_639_1(&IsoCode639_1::from_str("DE").unwrap()), // German
         Language::from_iso_code_639_1(&IsoCode639_1::from_str("FR").unwrap()), // French
-        Language::from_iso_code_639_1(&IsoCode639_1::from_str("ES").unwrap()), // Spanish
         Language::from_iso_code_639_1(&IsoCode639_1::from_str("IT").unwrap()), // Italian
         Language::from_iso_code_639_1(&IsoCode639_1::from_str("PL").unwrap()), // Polish
     ]
@@ -124,8 +119,8 @@ fn default_all_target_languages() -> Vec<Language> {
 impl Default for Config {
     fn default() -> Self {
         // Create default languages using ISO codes for consistency
-        let primary = Language::from_iso_code_639_1(&IsoCode639_1::from_str("RU").unwrap());
-        let secondary = Language::from_iso_code_639_1(&IsoCode639_1::from_str("EN").unwrap());
+        let primary = Language::from_iso_code_639_1(&IsoCode639_1::from_str("EN").unwrap());
+        let secondary = Language::from_iso_code_639_1(&IsoCode639_1::from_str("FR").unwrap());
         
         Config {
             api_url: "https://openrouter.ai/api/v1".to_string(),
@@ -136,9 +131,6 @@ impl Default for Config {
         }
     }
 }
-
-// --- REMOVED impl Serialize/Deserialize for Language ---
-// These are no longer needed due to #[serde(with = "...")]
 
 
 // --- Configuration Loading and Saving ---

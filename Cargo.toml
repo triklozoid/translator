@@ -10,8 +10,15 @@ futures-util = "0.3"
 async-openai = "0.28.0" # Updated version from 0.20.1
 tokio = { version = "1", features = ["full"] } # Use "full" or specific features like "macros", "rt-multi-thread"
 dotenvy = "0.15" # For reading .env files (optional but good practice)
-lingua = { version = "1.7.0", features = ["english", "russian", "portuguese", "ukrainian"] } # Добавлена lingua с нужными языками
+lingua = { version = "1.7.0", features = ["english", "french", "italian", "polish", "russian", "portuguese", "ukrainian", "german", "spanish"] } # Added more languages for testing
 # Added for configuration file handling
 toml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 dirs = "5.0" # For finding standard directories like XDG_CONFIG_HOME
+
+[dev-dependencies]
+tempfile = "3.8.1"
+
+[lib]
+name = "translator"
+path = "src/lib.rs"

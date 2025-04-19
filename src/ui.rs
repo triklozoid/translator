@@ -12,6 +12,44 @@ use crate::settings; // Import settings module
 use crate::translation::request_translation;
 use crate::clone; // Import the clone macro
 
+/// Implements the language selection algorithm from README.md
+/// 
+/// # Arguments
+/// 
+/// * `source_lang` - The detected source language (Option<Language>)
+/// * `primary_lang` - The user's primary language
+/// * `secondary_lang` - The user's secondary language
+/// * `last_lang` - The last selected target language
+/// 
+/// # Returns
+/// 
+/// The selected target language based on the algorithm
+pub fn choose_target_language(
+    source_lang: Option<Language>,
+    primary_lang: Language,
+    secondary_lang: Language,
+    last_lang: Language
+) -> Language {
+    // 1. If the source isn't the primary language, translate into the primary language
+    let is_source_primary = source_lang
+        .map(|detected| detected == primary_lang)
+        .unwrap_or(false);
+    
+    if !is_source_primary {
+        // Rule 1: If source isn't primary language, translate to primary
+        primary_lang
+    } else {
+        // Source IS primary language
+        // Rule 2: If there's a meaningful last choice, use it
+        if last_lang != primary_lang {
+            last_lang
+        } else {
+            // Rule 3: Fall back to secondary language
+            secondary_lang
+        }
+    }
+}
+
 // --- Helper function to update button states ---
 // Now accepts lingua::Language and a slice of button tuples with Language
 fn update_active_button_simple(
@@ -208,39 +246,35 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 }
 
                 // --- Implement language selection logic from README.md ---
-                // 1. If source isn't primary language, translate into primary language
-                // 2. If source is primary language and there's a meaningful last choice, use it
-                // 3. Otherwise, fall back to secondary language
-                
                 let (primary_lang, secondary_lang) = {
                     let config = config_rc_clone_init.borrow();
                     (config.primary_language, config.secondary_language)
                 };
                 
-                // Determine the target language based on the rules
-                let mut final_target_lang = {
-                    // Only use lingua detection to check if text is in primary language
-                    let is_source_primary = detected_source_lang
-                        .map(|detected| detected == primary_lang)
-                        .unwrap_or(false);
-                    
-                    if !is_source_primary {
-                        // Rule 1: If source isn't primary language, translate to primary
+                // Use the extracted function for language selection
+                let mut final_target_lang = choose_target_language(
+                    detected_source_lang,
+                    primary_lang,
+                    secondary_lang,
+                    last_target_language
+                );
+                
+                // Log the decision
+                match detected_source_lang {
+                    Some(src) if src != primary_lang => {
                         println!("Source is not primary language -> Translating to primary ({:?})", primary_lang);
-                        primary_lang
-                    } else {
-                        // Source IS primary language
-                        // Rule 2: If there's a meaningful last choice, use it
+                    },
+                    Some(_) => {
                         if last_target_language != primary_lang {
                             println!("Source is primary language and last target ({:?}) is meaningful -> Using last target", last_target_language);
-                            last_target_language
                         } else {
-                            // Rule 3: Fall back to secondary language
                             println!("Source is primary language and no meaningful last target -> Using secondary ({:?})", secondary_lang);
-                            secondary_lang
                         }
+                    },
+                    None => {
+                        println!("Could not detect source language -> Using primary language ({:?})", primary_lang);
                     }
-                };
+                }
 
                 // Ensure the final_target_lang is actually available in the UI buttons
                 let is_target_available = config_rc_clone_init.borrow().all_target_languages.contains(&final_target_lang);

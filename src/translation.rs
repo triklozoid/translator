@@ -1,4 +1,5 @@
-use crate::language::TargetLanguage;
+// Use lingua::Language directly
+use lingua::Language;
 use async_openai::{
     types::{
         ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
@@ -10,9 +11,10 @@ use gtk::Label;
 
 // --- Helper function to request translation ---
 // Added api_url and model_version parameters
+// Changed target_language type to lingua::Language
 pub async fn request_translation(
     text_to_translate: String,
-    target_language: TargetLanguage,
+    target_language: Language, // Use lingua::Language
     api_key: String,
     api_url: String, // Added
     model_version: String, // Added
@@ -24,7 +26,8 @@ pub async fn request_translation(
         return;
     }
 
-    label_to_update.set_label(&format!("Translating to {}...", target_language.code()));
+    // Use target_language.to_string() for display name
+    label_to_update.set_label(&format!("Translating to {}...", target_language.to_string()));
 
     // Configure API Client using provided URL
     let config = OpenAIConfig::new()
@@ -34,12 +37,13 @@ pub async fn request_translation(
     let client = Client::with_config(config);
 
     // Create Translation Request using provided model version
+    // Use target_language.to_string() in the prompt
     let request_result = CreateChatCompletionRequestArgs::default()
         .max_tokens(1024u16) // Increased token limit slightly
         .model(model_version) // Use model_version from config
         .messages([
             ChatCompletionRequestSystemMessageArgs::default()
-                .content(format!("You are a helpful assistant that translates text into {}. Provide only the translation text and nothing else.", target_language.as_str()))
+                .content(format!("You are a helpful assistant that translates text into {}. Provide only the translation text and nothing else.", target_language.to_string())) // Use language name string
                 .build().expect("Failed to build system message").into(),
             ChatCompletionRequestUserMessageArgs::default()
                 .content(text_to_translate) // Just pass the text directly

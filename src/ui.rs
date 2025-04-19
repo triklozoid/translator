@@ -3,21 +3,23 @@ use gtk::{glib, gdk, Application, ApplicationWindow, Label, Button, ToggleButton
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::env;
-use lingua::{LanguageDetectorBuilder, Language};
+use tokio::time::{timeout, Duration};
+// Use lingua::Language directly
+use lingua::{LanguageDetectorBuilder, Language}; // Removed unused IsoCode639_1 import
 
-use crate::language::TargetLanguage;
 use crate::config::Config; // Import Config struct
 use crate::settings; // Import settings module
 use crate::translation::request_translation;
-use crate::clone; // Import the clone macro from main.rs or lib.rs where it's defined
+use crate::clone; // Import the clone macro
 
 // --- Helper function to update button states ---
-// Now accepts a slice of button tuples
+// Now accepts lingua::Language and a slice of button tuples with Language
 fn update_active_button_simple(
-    active_lang: TargetLanguage,
-    buttons: &[(TargetLanguage, Rc<RefCell<ToggleButton>>)],
+    active_lang: Language,
+    buttons: &[(Language, Rc<RefCell<ToggleButton>>)],
 ) {
     for (lang, button_rc) in buttons {
+        // Compare lingua::Language directly
         button_rc.borrow().set_active(*lang == active_lang);
     }
 }
@@ -28,23 +30,15 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     // --- State Management ---
     // Use the initial config passed from main
     let config_rc = Rc::new(RefCell::new(initial_config));
-    
-    // Load last target language from settings
+
+    // Load last target language (now lingua::Language) from settings
     let last_target_language = settings::load_last_language();
     let original_clipboard_text = Rc::new(RefCell::new(None::<String>));
-    let api_key_rc = Rc::new(RefCell::new(None::<String>)); // Keep API key separate for now
+    let api_key_rc = Rc::new(RefCell::new(None::<String>)); // Keep API key separate
 
     // --- Lingua Detector ---
-    // Create the language detector. Consider creating it once if performance is critical.
-    // Preload only the languages we might detect or care about.
-    // Use languages from config for detection as well? For now, keep the original list.
-    let detector = Rc::new(LanguageDetectorBuilder::from_languages(&[
-        Language::English,
-        Language::Russian,
-        Language::Portuguese,
-        Language::Ukrainian,
-        // Add other potential source languages if needed
-    ]).build());
+    // Load all languages for detection
+    let detector = Rc::new(LanguageDetectorBuilder::from_all_languages().build());
 
 
     // --- UI Elements ---
@@ -67,8 +61,8 @@ pub fn build_ui(app: &Application, initial_config: Config) {
         .build();
 
     // --- Create Language Buttons Dynamically ---
-    // Store buttons in a Vec for dynamic access
-    let language_buttons_rc = Rc::new(RefCell::new(Vec::new()));
+    // Store buttons in a Vec with lingua::Language
+    let language_buttons_rc: Rc<RefCell<Vec<(Language, Rc<RefCell<ToggleButton>>)>>> = Rc::new(RefCell::new(Vec::new()));
     { // Scope for borrowing config_rc and language_buttons_rc mutably
         let mut buttons_mut = language_buttons_rc.borrow_mut();
         let config = config_rc.borrow(); // Borrow immutably to read all_target_languages
@@ -79,7 +73,16 @@ pub fn build_ui(app: &Application, initial_config: Config) {
              // Maybe add a fallback label here?
         } else {
             for lang in &config.all_target_languages {
-                let button = ToggleButton::with_label(lang.code());
+                // Get the ISO code as an Option, then convert to string
+                let button_label = lang.iso_code_639_1().to_string().to_uppercase();
+
+                // let button_label = match lang.iso_code_639_1() {
+                //     Some(code) => code.to_string().to_uppercase(),
+                //     None => lang.to_string(),
+                // };
+
+                let button = ToggleButton::with_label(&button_label);
+                button.set_tooltip_text(Some(&lang.to_string())); // Tooltip shows full name
                 lang_hbox.append(&button); // Add button to the UI layout
                 buttons_mut.push((*lang, Rc::new(RefCell::new(button)))); // Store lang and button Rc
             }
@@ -133,8 +136,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
             Err(_) => {
                 label_clone_init.set_text("Error: OPENROUTER_API_KEY environment variable not set.");
                 // Update button state even on error (show last language from settings)
-                let lang_to_show = last_target_language; // Use last_target_language from settings
-                let buttons = language_buttons_rc_clone_init.borrow(); // Borrow immutably
+                let lang_to_show = last_target_language; // Use last_target_language (lingua::Language) from settings
                 // Use the imported clone macro
                 glib::idle_add_local_once(clone!(@strong language_buttons_rc_clone_init => move || {
                     update_active_button_simple(lang_to_show, &language_buttons_rc_clone_init.borrow());
@@ -150,21 +152,21 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 *original_text_rc_clone_init.borrow_mut() = Some(text.clone()); // Store original text as String
 
                 // --- Language Detection ---
-                let detected_language: Option<Language> = detector_clone_init.detect_language_of(&text);
-                let detected_source_lang = detected_language.and_then(TargetLanguage::from_lingua); // Convert to our enum
+                // detected_language is Option<lingua::Language>
+                let detected_source_lang: Option<Language> = detector_clone_init.detect_language_of(&text);
 
-                if let Some(lang) = detected_language {
-                    println!("Detected source language: {:?}", lang); // Simplified log
+                if let Some(lang) = detected_source_lang {
+                    println!("Detected source language: {:?}", lang); // Log detected language
                 } else {
                     println!("Could not detect source language.");
                 }
 
-                // --- Automatic Language Switching Logic (Updated Heuristic) ---
+                // --- Automatic Language Switching Logic (Using lingua::Language) ---
                 let (primary_lang, secondary_lang) = {
                     let config = config_rc_clone_init.borrow();
                     (config.primary_language, config.secondary_language)
                 };
-                let mut final_target_lang = last_target_language; // Start with last target from settings
+                let mut final_target_lang = last_target_language; // Start with last target (lingua::Language) from settings
 
                 match detected_source_lang {
                     Some(detected) if detected == primary_lang => {
@@ -188,6 +190,11 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 if !is_target_available {
                     println!("Warning: Auto-selected target language {:?} is not in 'all_target_languages'. Reverting to last target {:?}", final_target_lang, last_target_language);
                     final_target_lang = last_target_language; // Revert if not available
+                    // Also ensure the last_target_language itself is available, otherwise pick the first from config?
+                    if !config_rc_clone_init.borrow().all_target_languages.contains(&final_target_lang) {
+                        println!("Warning: Last target language {:?} is also not in 'all_target_languages'. Using first available.", final_target_lang);
+                        final_target_lang = config_rc_clone_init.borrow().all_target_languages.first().cloned().unwrap_or(Language::English); // Fallback to English if list is somehow empty
+                    }
                 }
 
 
@@ -217,7 +224,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 if let Some(key) = api_key_rc_clone_init.borrow().as_ref() {
                      request_translation(
                          text,
-                         final_target_lang, // Use the determined target language
+                         final_target_lang, // Use the determined target language (lingua::Language)
                          key.clone(),
                          api_url,
                          model_version,
@@ -255,14 +262,14 @@ pub fn build_ui(app: &Application, initial_config: Config) {
         .title("Clipboard Translator")
         .child(&main_vbox)
         .default_width(450)
-        .default_height(400)
+        .default_height(400) // Adjusted default height slightly
         .build();
 
     // --- Language Button Toggle Handlers ---
     // Define the handler logic once
     let create_lang_button_handler = |
-        button_lang: TargetLanguage, // The language this specific button represents
-        all_buttons_rc: Rc<RefCell<Vec<(TargetLanguage, Rc<RefCell<ToggleButton>>)>>> // Rc to the Vec of all buttons
+        button_lang: Language, // The language this specific button represents (lingua::Language)
+        all_buttons_rc: Rc<RefCell<Vec<(Language, Rc<RefCell<ToggleButton>>)>>> // Rc to the Vec of all buttons
     | {
         // Clone necessary items for the handler closure
         let config_rc_handler = config_rc.clone(); // Clone config Rc
@@ -314,7 +321,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                          // Spawn a new future for the translation request
                          glib::spawn_future_local(request_translation(
                              text,
-                             button_lang, // Use newly set language
+                             button_lang, // Use newly set language (lingua::Language)
                              key,
                              api_url,
                              model_version,
@@ -323,6 +330,19 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                     } else {
                          println!("No original text or API key available to translate.");
                          label_clone.set_text("Cannot translate: Missing original text or API key.");
+                    }
+                } else {
+                    // This handles the case where the button was already active (e.g., set by initial load or auto-switch)
+                    // and the user clicks it again. We still need to ensure other buttons are off.
+                    let all_buttons = all_buttons_rc_clone.borrow();
+                    for (lang, other_btn_rc) in all_buttons.iter() {
+                        if *lang != button_lang && other_btn_rc.borrow().is_active() {
+                            other_btn_rc.borrow().set_active(false);
+                        }
+                    }
+                     // Ensure the clicked button *is* active if it wasn't already
+                    if !toggled_button.is_active() {
+                         toggled_button.set_active(true);
                     }
                 }
             } else {
@@ -336,6 +356,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
 
                      if let Some(button_rc_to_reactivate) = maybe_button_rc {
                          // Re-activate the button in the next idle loop iteration.
+                         // Using idle_add_local_once prevents potential infinite loops if the signal triggers itself immediately.
                          glib::idle_add_local_once(clone!(@strong button_rc_to_reactivate => move || {
                             // Check again before setting, in case state changed rapidly
                             if !button_rc_to_reactivate.borrow().is_active() {

@@ -1,5 +1,7 @@
 # Clipboard Translator
 
+![Clipboard Translator Screenshot](images/1.png)
+
 A lightweight, intelligent clipboard translation tool that automatically detects the source language and selects the appropriate target language based on your preferences.
 
 ## Features

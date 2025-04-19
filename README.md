@@ -48,8 +48,8 @@ function chooseTargetLanguage(SRC, PRIMARY_LANGUAGE, SECONDARY_LANGUAGE, LAST_LA
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/clipboard-translator.git
-   cd clipboard-translator
+   git clone https://github.com/triklozoid/translator.git
+   cd translator
    ```
 
 2. Build the application:

@@ -78,22 +78,9 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     // Only load languages we need for detection from config
     let detector = {
         let config = config_rc.borrow();
-        // Use primary, secondary, and a subset of all target languages
         let detection_languages = vec![
             config.primary_language,
-            // config.secondary_language,
         ];
-        
-        // Add other languages from all_target_languages (up to a reasonable limit)
-        // for lang in &config.all_target_languages {
-        //     if !detection_languages.contains(lang) {
-        //         detection_languages.push(*lang);
-        //         // Limit to ~10 languages for performance
-        //         if detection_languages.len() >= 10 {
-        //             break;
-        //         }
-        //     }
-        // }
         
         println!("Setting up language detector with: {:?}", detection_languages);
         Rc::new(LanguageDetectorBuilder::from_languages(&detection_languages).with_low_accuracy_mode().build())

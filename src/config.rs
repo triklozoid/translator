@@ -115,10 +115,6 @@ pub fn load_config() -> Config {
                             if config.all_target_languages.is_empty() {
                                 println!("Warning: 'all_target_languages' was empty in config file, using default list.");
                                 config.all_target_languages = default_all_target_languages();
-                                // Optionally re-save the config here if you want to fix the file
-                                // if let Err(e) = save_config(&config) {
-                                //     eprintln!("Failed to save config after fixing empty language list: {}", e);
-                                // }
                             }
                             // Ensure last_target_language is within all_target_languages
                             // If not, reset it to the first language in the list or primary/secondary?

@@ -19,7 +19,8 @@ fn get_last_lang_path() -> Option<PathBuf> {
 // --- Helper function to load last language from settings ---
 // Returns lingua::Language
 pub fn load_last_language() -> Language {
-    let default_language = Language::English; // Default language
+    // Default to English if no saved language
+    let default_language = Language::from_iso_code_639_1(&IsoCode639_1::from_str("EN").unwrap());
     match get_last_lang_path() {
         Some(path) => {
             match fs::read_to_string(path) {

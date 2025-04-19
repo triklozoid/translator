@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::env;
 use tokio::time::{timeout, Duration};
 // Use lingua::Language directly
-use lingua::{LanguageDetectorBuilder, Language, IsoCode639_1};
+use lingua::{LanguageDetectorBuilder, Language};
 
 use crate::config::Config; // Import Config struct
 use crate::settings; // Import settings module
@@ -37,17 +37,29 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     let api_key_rc = Rc::new(RefCell::new(None::<String>)); // Keep API key separate
 
     // --- Lingua Detector ---
-    // Only load languages we actually need for detection to improve performance
-    let detector = Rc::new(
-        LanguageDetectorBuilder::from_languages(&[
-            Language::English,
-            Language::Russian, 
-            Language::Portuguese,
-            Language::Ukrainian,
-            // Add any other languages from config.all_target_languages
-            // that you commonly use, but keep the list small
-        ]).build()
-    );
+    // Only load languages we need for detection from config
+    let detector = {
+        let config = config_rc.borrow();
+        // Use primary, secondary, and a subset of all target languages
+        let detection_languages = vec![
+            config.primary_language,
+            // config.secondary_language,
+        ];
+        
+        // Add other languages from all_target_languages (up to a reasonable limit)
+        // for lang in &config.all_target_languages {
+        //     if !detection_languages.contains(lang) {
+        //         detection_languages.push(*lang);
+        //         // Limit to ~10 languages for performance
+        //         if detection_languages.len() >= 10 {
+        //             break;
+        //         }
+        //     }
+        // }
+        
+        println!("Setting up language detector with: {:?}", detection_languages);
+        Rc::new(LanguageDetectorBuilder::from_languages(&detection_languages).with_low_accuracy_mode().build())
+    };
 
 
     // --- UI Elements ---
@@ -195,29 +207,40 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                     println!("Could not detect source language.");
                 }
 
-                // --- Automatic Language Switching Logic (Using lingua::Language) ---
+                // --- Implement language selection logic from README.md ---
+                // 1. If source isn't primary language, translate into primary language
+                // 2. If source is primary language and there's a meaningful last choice, use it
+                // 3. Otherwise, fall back to secondary language
+                
                 let (primary_lang, secondary_lang) = {
                     let config = config_rc_clone_init.borrow();
                     (config.primary_language, config.secondary_language)
                 };
-                let mut final_target_lang = last_target_language; // Start with last target (lingua::Language) from settings
-
-                match detected_source_lang {
-                    Some(detected) if detected == primary_lang => {
-                        final_target_lang = secondary_lang;
-                        println!("Source matches primary ({:?}) -> Switching target to secondary ({:?})", primary_lang, secondary_lang);
+                
+                // Determine the target language based on the rules
+                let mut final_target_lang = {
+                    // Only use lingua detection to check if text is in primary language
+                    let is_source_primary = detected_source_lang
+                        .map(|detected| detected == primary_lang)
+                        .unwrap_or(false);
+                    
+                    if !is_source_primary {
+                        // Rule 1: If source isn't primary language, translate to primary
+                        println!("Source is not primary language -> Translating to primary ({:?})", primary_lang);
+                        primary_lang
+                    } else {
+                        // Source IS primary language
+                        // Rule 2: If there's a meaningful last choice, use it
+                        if last_target_language != primary_lang {
+                            println!("Source is primary language and last target ({:?}) is meaningful -> Using last target", last_target_language);
+                            last_target_language
+                        } else {
+                            // Rule 3: Fall back to secondary language
+                            println!("Source is primary language and no meaningful last target -> Using secondary ({:?})", secondary_lang);
+                            secondary_lang
+                        }
                     }
-                    Some(detected) if detected == secondary_lang => {
-                        final_target_lang = primary_lang;
-                        println!("Source matches secondary ({:?}) -> Switching target to primary ({:?})", secondary_lang, primary_lang);
-                    }
-                    Some(detected) => {
-                        println!("Source ({:?}) is not primary ({:?}) or secondary ({:?}) -> Keeping target {:?}", detected, primary_lang, secondary_lang, final_target_lang);
-                    }
-                    None => {
-                        println!("Could not detect source language -> Keeping target {:?}", final_target_lang);
-                    }
-                }
+                };
 
                 // Ensure the final_target_lang is actually available in the UI buttons
                 let is_target_available = config_rc_clone_init.borrow().all_target_languages.contains(&final_target_lang);

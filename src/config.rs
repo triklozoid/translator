@@ -1,10 +1,10 @@
 // Use lingua::Language directly
-use lingua::Language; // Removed unused IsoCode639_1 import
+use lingua::{Language, IsoCode639_1};
+use std::str::FromStr;
 use serde::{Deserialize, Serialize, Deserializer, Serializer}; // Import necessary serde traits
 use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::str::FromStr; // Needed for Language::from_str
 use std::time::{SystemTime, UNIX_EPOCH}; // For timestamp in backup filename
 
 const CONFIG_DIR: &str = "translator";
@@ -108,30 +108,30 @@ pub struct Config {
 // Provide a sensible subset of languages, not all 75+
 fn default_all_target_languages() -> Vec<Language> {
     vec![
-        Language::English,
-        Language::Russian,
-        Language::Portuguese,
-        Language::Ukrainian,
-        Language::German,
-        Language::French,
-        Language::Spanish,
-        Language::Italian,
-        Language::Polish,
-        // Add other frequently used languages here
+        Language::from_iso_code_639_1(&IsoCode639_1::from_str("EN").unwrap()), // English
+        Language::from_iso_code_639_1(&IsoCode639_1::from_str("RU").unwrap()), // Russian
+        Language::from_iso_code_639_1(&IsoCode639_1::from_str("PT").unwrap()), // Portuguese
+        Language::from_iso_code_639_1(&IsoCode639_1::from_str("UK").unwrap()), // Ukrainian
+        Language::from_iso_code_639_1(&IsoCode639_1::from_str("DE").unwrap()), // German
+        Language::from_iso_code_639_1(&IsoCode639_1::from_str("FR").unwrap()), // French
+        Language::from_iso_code_639_1(&IsoCode639_1::from_str("ES").unwrap()), // Spanish
+        Language::from_iso_code_639_1(&IsoCode639_1::from_str("IT").unwrap()), // Italian
+        Language::from_iso_code_639_1(&IsoCode639_1::from_str("PL").unwrap()), // Polish
     ]
 }
 
 
 impl Default for Config {
     fn default() -> Self {
+        // Create default languages using ISO codes for consistency
+        let primary = Language::from_iso_code_639_1(&IsoCode639_1::from_str("RU").unwrap());
+        let secondary = Language::from_iso_code_639_1(&IsoCode639_1::from_str("EN").unwrap());
+        
         Config {
             api_url: "https://openrouter.ai/api/v1".to_string(),
-            // Consider updating the default model if needed
-            model_version: "openai/gpt-4o".to_string(), // Example: Use a more current default model maybe?
-            // Use lingua::Language variants
-            primary_language: Language::Russian,
-            secondary_language: Language::English,
-            // Use the default function here as well
+            model_version: "openai/gpt-4o".to_string(),
+            primary_language: primary,
+            secondary_language: secondary,
             all_target_languages: default_all_target_languages(),
         }
     }

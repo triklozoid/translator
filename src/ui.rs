@@ -37,8 +37,17 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     let api_key_rc = Rc::new(RefCell::new(None::<String>)); // Keep API key separate
 
     // --- Lingua Detector ---
-    // Load all languages for detection
-    let detector = Rc::new(LanguageDetectorBuilder::from_all_languages().build());
+    // Only load languages we actually need for detection to improve performance
+    let detector = Rc::new(
+        LanguageDetectorBuilder::from_languages(&[
+            Language::English,
+            Language::Russian, 
+            Language::Portuguese,
+            Language::Ukrainian,
+            // Add any other languages from config.all_target_languages
+            // that you commonly use, but keep the list small
+        ]).build()
+    );
 
 
     // --- UI Elements ---
@@ -151,12 +160,42 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 let text = gstring_text.to_string(); // Convert to String
                 *original_text_rc_clone_init.borrow_mut() = Some(text.clone()); // Store original text as String
 
-                // --- Language Detection ---
+                // --- Performance Logging Start ---
+                let start_time = std::time::Instant::now();
+                println!("Starting language detection at {:?}", start_time);
+                
+                // --- Language Detection with Timeout ---
                 // detected_language is Option<lingua::Language>
-                let detected_source_lang: Option<Language> = detector_clone_init.detect_language_of(&text);
+                println!("Text length for detection: {} characters", text.len());
+                let detection_start = std::time::Instant::now();
+                
+                // Only use a small sample of text for detection (first 100 chars or less)
+                let sample_text = if text.len() > 100 {
+                    &text[..100]
+                } else {
+                    &text
+                };
+                
+                // Add timeout to prevent long detection times
+                let detected_source_lang = match timeout(
+                    Duration::from_secs(2), // 2 second timeout
+                    async {
+                        detector_clone_init.detect_language_of(sample_text)
+                    }
+                ).await {
+                    Ok(lang) => lang,
+                    Err(_) => {
+                        println!("Language detection timed out after 2 seconds");
+                        None // Return None if detection times out
+                    }
+                };
+                
+                let detection_duration = detection_start.elapsed();
+                println!("Language detection took: {:?}", detection_duration);
 
                 if let Some(lang) = detected_source_lang {
                     println!("Detected source language: {:?}", lang); // Log detected language
+                    println!("Total time from start to detection: {:?}", start_time.elapsed());
                 } else {
                     println!("Could not detect source language.");
                 }

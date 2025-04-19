@@ -1,7 +1,7 @@
 // Declare modules
 mod config; // Added config module
 mod language;
-// mod settings; // Removed settings module
+mod settings; // Reactivated settings module
 mod translation;
 mod ui;
 

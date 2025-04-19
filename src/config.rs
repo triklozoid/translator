@@ -13,7 +13,6 @@ const CONFIG_FILE: &str = "config.toml";
 pub struct Config {
     pub api_url: String,
     pub model_version: String,
-    pub last_target_language: TargetLanguage,
     pub primary_language: TargetLanguage,
     pub secondary_language: TargetLanguage,
     // Added list of all available target languages for the UI
@@ -38,7 +37,6 @@ impl Default for Config {
         Config {
             api_url: "https://openrouter.ai/api/v1".to_string(),
             model_version: "openai/gpt-4o-2024-11-20".to_string(),
-            last_target_language: TargetLanguage::English,
             primary_language: TargetLanguage::Russian,
             secondary_language: TargetLanguage::English,
             // Use the default function here as well
@@ -116,21 +114,7 @@ pub fn load_config() -> Config {
                                 println!("Warning: 'all_target_languages' was empty in config file, using default list.");
                                 config.all_target_languages = default_all_target_languages();
                             }
-                            // Ensure last_target_language is within all_target_languages
-                            // If not, reset it to the first language in the list or primary/secondary?
-                            if !config.all_target_languages.contains(&config.last_target_language) {
-                                let new_last_target = config.all_target_languages.first().cloned().unwrap_or_else(|| {
-                                    // Fallback if all_target_languages is somehow still empty
-                                    eprintln!("Error: 'all_target_languages' is empty even after default checks.");
-                                    TargetLanguage::English // Absolute fallback
-                                });
-                                println!(
-                                    "Warning: 'last_target_language' ({:?}) not found in 'all_target_languages'. Resetting to {:?}.",
-                                    config.last_target_language, new_last_target
-                                );
-                                config.last_target_language = new_last_target;
-                                // Optionally re-save config
-                            }
+                            // No need to validate last_target_language as it's now stored separately
                             // Log the loaded languages for debugging
                             println!("Loaded 'all_target_languages': {:?}", config.all_target_languages);
                             config

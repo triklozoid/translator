@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::env;
 use tokio::time::{timeout, Duration};
 // Use lingua::Language directly
-use lingua::{LanguageDetectorBuilder, Language}; // Removed unused IsoCode639_1 import
+use lingua::{LanguageDetectorBuilder, Language, IsoCode639_1};
 
 use crate::config::Config; // Import Config struct
 use crate::settings; // Import settings module
@@ -82,13 +82,8 @@ pub fn build_ui(app: &Application, initial_config: Config) {
              // Maybe add a fallback label here?
         } else {
             for lang in &config.all_target_languages {
-                // Get the ISO code as an Option, then convert to string
+                // Get the ISO code and convert to string
                 let button_label = lang.iso_code_639_1().to_string().to_uppercase();
-
-                // let button_label = match lang.iso_code_639_1() {
-                //     Some(code) => code.to_string().to_uppercase(),
-                //     None => lang.to_string(),
-                // };
 
                 let button = ToggleButton::with_label(&button_label);
                 button.set_tooltip_text(Some(&lang.to_string())); // Tooltip shows full name

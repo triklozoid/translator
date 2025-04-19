@@ -1,11 +1,11 @@
-// Use lingua::Language directly
-use lingua::Language;
+// Use lingua::Language and IsoCode639_1 directly
+use lingua::{Language, IsoCode639_1};
+use std::str::FromStr;
 use std::fs;
 use std::path::PathBuf;
-use std::str::FromStr; // Required for Language::from_str
 
 const SETTINGS_DIR: &str = "translator";
-const LAST_LANG_FILE: &str = "last_language.txt"; // Store language name string
+const LAST_LANG_FILE: &str = "last_language.txt"; // Store ISO code
 
 // --- Helper function to get last language file path ---
 fn get_last_lang_path() -> Option<PathBuf> {
@@ -23,35 +23,25 @@ pub fn load_last_language() -> Language {
     match get_last_lang_path() {
         Some(path) => {
             match fs::read_to_string(path) {
-                Ok(lang_name) => {
-                    // Try to parse the string into a Language enum variant
-                    println!("Loaded last language string: {}", lang_name);
-                    match lang_name.trim().parse::<Language>() {
-                        Ok(lang) => {
+                Ok(iso_code) => {
+                    // Try to convert the ISO code to a Language
+                    let iso_code_str = iso_code.trim().to_uppercase();
+                    println!("Loaded last language ISO code: {}", iso_code_str);
+                    
+                    // Try to parse the string as an IsoCode639_1 enum value
+                    match IsoCode639_1::from_str(&iso_code_str) {
+                        Ok(iso_code) => {
+                            // Convert from IsoCode639_1 to Language
+                            let lang = Language::from_iso_code_639_1(&iso_code);
                             println!("Loaded last language: {:?}", lang);
                             lang
                         },
                         Err(_) => {
-                            // Fallback to mapping two-letter language codes
-                            match lang_name.trim().to_uppercase().as_str() {
-                                "UK" => {
-                                    println!("Mapped two-letter code 'UK' to Ukrainian.");
-                                    Language::Ukrainian
-                                },
-                                "EN" => {
-                                    println!("Mapped two-letter code 'EN' to English.");
-                                    Language::English
-                                },
-                                "RU" => {
-                                    println!("Mapped two-letter code 'RU' to Russian.");
-                                    Language::Russian
-                                },
-                                "PT" => {
-                                    println!("Mapped two-letter code 'PT' to Portuguese.");
-                                    Language::Portuguese
-                                },
-                                _ => {
-                                    println!("Invalid language name '{}' in settings file, using default {:?}", lang_name.trim(), default_language);
+                            // Try to parse as language name for backward compatibility
+                            match Language::from_str(&iso_code_str) {
+                                Ok(lang) => lang,
+                                Err(_) => {
+                                    println!("Invalid ISO code '{}' in settings file, using default {:?}", iso_code_str, default_language);
                                     default_language
                                 }
                             }
@@ -89,14 +79,17 @@ pub fn save_last_language(lang: Language) -> Result<(), std::io::Error> {
         fs::create_dir_all(parent)?; // Propagate IO errors
     }
 
+    // Get the ISO 639-1 code for the language
+    let iso_code = lang.iso_code_639_1().to_string().to_uppercase();
+
     // Use temp file writing to avoid corrupting the file if saving is interrupted
     let temp_path = path.with_extension("tmp");
-    // Write the language name string (e.g., "English")
-    fs::write(&temp_path, lang.to_string())?;
+    // Write the ISO code (e.g., "EN")
+    fs::write(&temp_path, &iso_code)?;
 
     // Rename the temporary file to the final file name
     fs::rename(&temp_path, &path)?;
 
-    println!("Last language saved to {:?}: {:?}", path, lang);
+    println!("Last language saved to {:?}: {:?} (ISO: {})", path, lang, iso_code);
     Ok(())
 }

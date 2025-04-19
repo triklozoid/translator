@@ -12,31 +12,42 @@ const CONFIG_FILE: &str = "config.toml";
 
 // --- Serde helper module for lingua::Language ---
 mod language_serde {
-    use super::*; // Import items from parent module (Language, FromStr, etc.)
+    use super::*; // Import items from parent module (Language, etc.)
     use serde::de::Error; // Import serde error type
 
-    // Serialize a single Language
+    // Serialize a single Language to its ISO code
     pub fn serialize<S>(lang: &Language, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        serializer.serialize_str(&lang.to_string())
+        // Get the ISO 639-1 code and convert to uppercase string
+        let code = lang.iso_code_639_1().to_string().to_uppercase();
+        serializer.serialize_str(&code)
     }
 
-    // Deserialize a single Language
+    // Deserialize a single Language from its ISO code
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Language, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        Language::from_str(&s)
-            .map_err(|_| D::Error::custom(format!("invalid language name: {}", s)))
+        use lingua::IsoCode639_1;
+        let code = String::deserialize(deserializer)?;
+        
+        // Try to parse as ISO code first
+        if let Ok(iso_code) = IsoCode639_1::from_str(&code.to_uppercase()) {
+            // Convert from IsoCode639_1 to Language
+            return Ok(Language::from_iso_code_639_1(&iso_code));
+        }
+        
+        // If that fails, try to parse as language name (for backward compatibility)
+        Language::from_str(&code)
+            .map_err(|_| D::Error::custom(format!("invalid language code or name: {}", code)))
     }
 
     // --- Helpers for Vec<Language> ---
     // We need separate helpers for Vec because #[serde(with = "...")] applies to the whole field
 
-    // Serialize Vec<Language>
+    // Serialize Vec<Language> to ISO codes
     pub fn serialize_vec<S>(langs: &[Language], serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -44,22 +55,31 @@ mod language_serde {
         use serde::ser::SerializeSeq;
         let mut seq = serializer.serialize_seq(Some(langs.len()))?;
         for lang in langs {
-            seq.serialize_element(&lang.to_string())?; // Serialize each lang as string
+            // Use ISO code for each language
+            let code = lang.iso_code_639_1().to_string().to_uppercase();
+            seq.serialize_element(&code)?;
         }
         seq.end()
     }
 
-    // Deserialize Vec<Language>
+    // Deserialize Vec<Language> from ISO codes
     pub fn deserialize_vec<'de, D>(deserializer: D) -> Result<Vec<Language>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let strings: Vec<String> = Vec::deserialize(deserializer)?;
-        strings
+        use lingua::IsoCode639_1;
+        let codes: Vec<String> = Vec::deserialize(deserializer)?;
+        codes
             .into_iter()
-            .map(|s| {
-                Language::from_str(&s)
-                    .map_err(|_| D::Error::custom(format!("invalid language name in list: {}", s)))
+            .map(|code| {
+                // Try to parse as ISO code first
+                if let Ok(iso_code) = IsoCode639_1::from_str(&code.to_uppercase()) {
+                    return Ok(Language::from_iso_code_639_1(&iso_code));
+                }
+                
+                // If that fails, try to parse as language name (for backward compatibility)
+                Language::from_str(&code)
+                    .map_err(|_| D::Error::custom(format!("invalid language code or name in list: {}", code)))
             })
             .collect() // Collect results into Result<Vec<Language>, D::Error>
     }

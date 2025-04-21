@@ -202,10 +202,12 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 let detection_start = std::time::Instant::now();
                 
                 // Only use a small sample of text for detection (first 100 chars or less)
-                let sample_text = if text.len() > 100 {
-                    &text[..100]
+                // Use a safe way to truncate that respects UTF-8 character boundaries
+                let sample_text = if text.chars().count() > 100 {
+                    // Collect first 100 characters safely
+                    text.chars().take(100).collect::<String>()
                 } else {
-                    &text
+                    text.clone()
                 };
                 
                 // Add timeout to prevent long detection times

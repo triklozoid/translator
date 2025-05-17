@@ -1,8 +1,8 @@
 // Use lingua::Language and IsoCode639_1 directly
-use lingua::{Language, IsoCode639_1};
-use std::str::FromStr;
+use lingua::{IsoCode639_1, Language};
 use std::fs;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 const SETTINGS_DIR: &str = "translator";
 const LAST_LANG_FILE: &str = "last_language.txt"; // Store ISO code
@@ -15,7 +15,7 @@ fn get_last_lang_path() -> Option<PathBuf> {
     } else {
         dirs::config_dir()?
     };
-    
+
     let mut path = config_dir;
     path.push(SETTINGS_DIR);
     path.push(LAST_LANG_FILE);
@@ -34,7 +34,7 @@ pub fn load_last_language() -> Language {
                     // Try to convert the ISO code to a Language
                     let iso_code_str = iso_code.trim().to_uppercase();
                     println!("Loaded last language ISO code: {}", iso_code_str);
-                    
+
                     // Try to parse the string as an IsoCode639_1 enum value
                     match IsoCode639_1::from_str(&iso_code_str) {
                         Ok(iso_code) => {
@@ -42,7 +42,7 @@ pub fn load_last_language() -> Language {
                             let lang = Language::from_iso_code_639_1(&iso_code);
                             println!("Loaded last language: {:?}", lang);
                             lang
-                        },
+                        }
                         Err(_) => {
                             // Try to parse as language name for backward compatibility
                             match Language::from_str(&iso_code_str) {
@@ -54,7 +54,7 @@ pub fn load_last_language() -> Language {
                             }
                         }
                     }
-                },
+                }
                 Err(e) => {
                     // Don't print error if file simply doesn't exist, that's expected on first run
                     if e.kind() != std::io::ErrorKind::NotFound {
@@ -63,7 +63,7 @@ pub fn load_last_language() -> Language {
                     default_language // Default if file can't be read
                 }
             }
-        },
+        }
         None => {
             println!("Could not determine config directory for last language");
             default_language // Default if path can't be determined
@@ -97,6 +97,9 @@ pub fn save_last_language(lang: Language) -> Result<(), std::io::Error> {
     // Rename the temporary file to the final file name
     fs::rename(&temp_path, &path)?;
 
-    println!("Last language saved to {:?}: {:?} (ISO: {})", path, lang, iso_code);
+    println!(
+        "Last language saved to {:?}: {:?} (ISO: {})",
+        path, lang, iso_code
+    );
     Ok(())
 }

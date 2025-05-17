@@ -1,10 +1,10 @@
 // Use lingua::Language directly
-use lingua::{Language, IsoCode639_1};
-use std::str::FromStr;
-use serde::{Deserialize, Serialize, Deserializer, Serializer}; // Import necessary serde traits
+use lingua::{IsoCode639_1, Language};
+use serde::{Deserialize, Deserializer, Serialize, Serializer}; // Import necessary serde traits
 use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH}; // For timestamp in backup filename
 
 const CONFIG_DIR: &str = "translator";
@@ -32,13 +32,13 @@ mod language_serde {
     {
         use lingua::IsoCode639_1;
         let code = String::deserialize(deserializer)?;
-        
+
         // Try to parse as ISO code first
         if let Ok(iso_code) = IsoCode639_1::from_str(&code.to_uppercase()) {
             // Convert from IsoCode639_1 to Language
             return Ok(Language::from_iso_code_639_1(&iso_code));
         }
-        
+
         // If that fails, try to parse as language name (for backward compatibility)
         Language::from_str(&code)
             .map_err(|_| D::Error::custom(format!("invalid language code or name: {}", code)))
@@ -76,15 +76,15 @@ mod language_serde {
                 if let Ok(iso_code) = IsoCode639_1::from_str(&code.to_uppercase()) {
                     return Ok(Language::from_iso_code_639_1(&iso_code));
                 }
-                
+
                 // If that fails, try to parse as language name (for backward compatibility)
-                Language::from_str(&code)
-                    .map_err(|_| D::Error::custom(format!("invalid language code or name in list: {}", code)))
+                Language::from_str(&code).map_err(|_| {
+                    D::Error::custom(format!("invalid language code or name in list: {}", code))
+                })
             })
             .collect() // Collect results into Result<Vec<Language>, D::Error>
     }
 }
-
 
 // Derive Serialize, Deserialize, Debug, and Clone for the Config struct
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -99,7 +99,8 @@ pub struct Config {
     // List of available target languages for the UI
     #[serde(default = "default_all_target_languages")] // Use default if missing in file
     #[serde(serialize_with = "language_serde::serialize_vec")] // Use specific vec serializer
-    #[serde(deserialize_with = "language_serde::deserialize_vec")] // Use specific vec deserializer
+    #[serde(deserialize_with = "language_serde::deserialize_vec")]
+    // Use specific vec deserializer
     pub all_target_languages: Vec<Language>,
 }
 
@@ -115,13 +116,12 @@ fn default_all_target_languages() -> Vec<Language> {
     ]
 }
 
-
 impl Default for Config {
     fn default() -> Self {
         // Create default languages using ISO codes for consistency
         let primary = Language::from_iso_code_639_1(&IsoCode639_1::from_str("EN").unwrap());
         let secondary = Language::from_iso_code_639_1(&IsoCode639_1::from_str("FR").unwrap());
-        
+
         Config {
             api_url: "https://openrouter.ai/api/v1".to_string(),
             model_version: "openai/gpt-4o".to_string(),
@@ -132,7 +132,6 @@ impl Default for Config {
     }
 }
 
-
 // --- Configuration Loading and Saving ---
 
 fn get_config_path() -> Option<PathBuf> {
@@ -142,7 +141,7 @@ fn get_config_path() -> Option<PathBuf> {
     } else {
         dirs::config_dir()?
     };
-    
+
     let mut path = config_dir;
     path.push(CONFIG_DIR);
     path.push(CONFIG_FILE);
@@ -170,7 +169,10 @@ pub fn load_config() -> Config {
                 Ok(mut file) => {
                     let mut contents = String::new();
                     if let Err(e) = file.read_to_string(&mut contents) {
-                        eprintln!("Failed to read config file {:?}: {}. Using defaults.", path, e);
+                        eprintln!(
+                            "Failed to read config file {:?}: {}. Using defaults.",
+                            path, e
+                        );
                         return Config::default(); // Return default on read error
                     }
 
@@ -178,28 +180,44 @@ pub fn load_config() -> Config {
                     match toml::from_str::<Config>(&contents) {
                         Ok(mut config) => {
                             println!("Successfully loaded config from {:?}", path); // Log success
-                            // Ensure all_target_languages is not empty, use default if it is
-                            // (Should be handled by serde(default), but as a fallback)
+                                                                                    // Ensure all_target_languages is not empty, use default if it is
+                                                                                    // (Should be handled by serde(default), but as a fallback)
                             if config.all_target_languages.is_empty() {
                                 println!("Warning: 'all_target_languages' was empty in config file, using default list.");
                                 config.all_target_languages = default_all_target_languages();
                             }
                             // Ensure primary/secondary languages are actually in the list
                             // (Optional validation, could also just let it be)
-                            if !config.all_target_languages.contains(&config.primary_language) {
+                            if !config
+                                .all_target_languages
+                                .contains(&config.primary_language)
+                            {
                                 eprintln!("Warning: Primary language '{:?}' from config is not in 'all_target_languages'.", config.primary_language);
                                 // Optionally add it or reset to default? For now, just warn.
                             }
-                             if !config.all_target_languages.contains(&config.secondary_language) {
+                            if !config
+                                .all_target_languages
+                                .contains(&config.secondary_language)
+                            {
                                 eprintln!("Warning: Secondary language '{:?}' from config is not in 'all_target_languages'.", config.secondary_language);
                             }
 
                             // Log the loaded languages for debugging
                             println!("Loaded 'primary_language': {:?}", config.primary_language);
-                            println!("Loaded 'secondary_language': {:?}", config.secondary_language);
-                            println!("Loaded 'all_target_languages': {:?}", config.all_target_languages.iter().map(|l| l.to_string()).collect::<Vec<_>>());
+                            println!(
+                                "Loaded 'secondary_language': {:?}",
+                                config.secondary_language
+                            );
+                            println!(
+                                "Loaded 'all_target_languages': {:?}",
+                                config
+                                    .all_target_languages
+                                    .iter()
+                                    .map(|l| l.to_string())
+                                    .collect::<Vec<_>>()
+                            );
                             config
-                        },
+                        }
                         Err(e) => {
                             // Print the detailed parsing error
                             eprintln!("Failed to parse config file {:?}. Using defaults.", path);
@@ -231,7 +249,10 @@ pub fn load_config() -> Config {
                 }
                 Err(e) => {
                     // Handle specific errors like permission denied differently if needed
-                    eprintln!("Failed to open config file {:?}: {}. Using defaults.", path, e);
+                    eprintln!(
+                        "Failed to open config file {:?}: {}. Using defaults.",
+                        path, e
+                    );
                     Config::default() // Return default on open error
                 }
             }
@@ -263,22 +284,43 @@ pub fn save_config(config: &Config) -> Result<(), std::io::Error> {
         validated_config.all_target_languages = default_all_target_languages();
     }
     // Ensure primary/secondary are in the list (optional: add them if missing?)
-    if !validated_config.all_target_languages.contains(&validated_config.primary_language) {
-         eprintln!("Warning: Primary language {:?} not in list during save. Adding it.", validated_config.primary_language);
-         validated_config.all_target_languages.push(validated_config.primary_language);
+    if !validated_config
+        .all_target_languages
+        .contains(&validated_config.primary_language)
+    {
+        eprintln!(
+            "Warning: Primary language {:?} not in list during save. Adding it.",
+            validated_config.primary_language
+        );
+        validated_config
+            .all_target_languages
+            .push(validated_config.primary_language);
     }
-     if !validated_config.all_target_languages.contains(&validated_config.secondary_language) {
-         eprintln!("Warning: Secondary language {:?} not in list during save. Adding it.", validated_config.secondary_language);
-         validated_config.all_target_languages.push(validated_config.secondary_language);
+    if !validated_config
+        .all_target_languages
+        .contains(&validated_config.secondary_language)
+    {
+        eprintln!(
+            "Warning: Secondary language {:?} not in list during save. Adding it.",
+            validated_config.secondary_language
+        );
+        validated_config
+            .all_target_languages
+            .push(validated_config.secondary_language);
     }
-
 
     let toml_string = toml::to_string_pretty(&validated_config) // Save the validated config
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("TOML serialization error: {}", e)))?;
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("TOML serialization error: {}", e),
+            )
+        })?;
 
     // Use temp file writing to avoid corrupting the file if saving is interrupted
     let temp_path = path.with_extension("tmp");
-    { // Scope for file writing
+    {
+        // Scope for file writing
         let mut file = fs::File::create(&temp_path)?;
         file.write_all(toml_string.as_bytes())?;
         file.sync_all()?; // Ensure data is written to disk

@@ -1,6 +1,6 @@
-use translator::{translate_text, TranslationResult};
 use lingua::Language;
 use tokio::time::{timeout, Duration};
+use translator::{translate_text, TranslationResult};
 
 #[tokio::test]
 async fn test_empty_text() {
@@ -10,7 +10,8 @@ async fn test_empty_text() {
         "test-key".to_string(),
         "http://127.0.0.1:9999".to_string(), // Use local unreachable address
         "gpt-3.5-turbo".to_string(),
-    ).await;
+    )
+    .await;
 
     assert!(result.is_err());
     assert_eq!(result.unwrap_err(), "Clipboard text is empty.");
@@ -24,7 +25,8 @@ async fn test_whitespace_only_text() {
         "test-key".to_string(),
         "http://127.0.0.1:9999".to_string(),
         "gpt-3.5-turbo".to_string(),
-    ).await;
+    )
+    .await;
 
     assert!(result.is_err());
     assert_eq!(result.unwrap_err(), "Clipboard text is empty.");
@@ -41,12 +43,16 @@ async fn test_network_error_with_timeout() {
     );
 
     let result = timeout(Duration::from_secs(5), future).await;
-    
+
     match result {
         Ok(inner_result) => {
             assert!(inner_result.is_err());
             let error = inner_result.unwrap_err();
-            assert!(error.contains("Error") || error.contains("Network") || error.contains("Connection"));
+            assert!(
+                error.contains("Error")
+                    || error.contains("Network")
+                    || error.contains("Connection")
+            );
         }
         Err(_) => {
             // Timeout is also acceptable for network errors
@@ -66,7 +72,7 @@ async fn test_single_language() {
     );
 
     let result = timeout(Duration::from_secs(5), future).await;
-    
+
     match result {
         Ok(inner_result) => {
             assert!(inner_result.is_err());
@@ -80,11 +86,7 @@ async fn test_single_language() {
 
 #[tokio::test]
 async fn test_multiple_languages_with_timeout() {
-    let languages = vec![
-        Language::Spanish,
-        Language::French,
-        Language::German,
-    ];
+    let languages = vec![Language::Spanish, Language::French, Language::German];
 
     for language in languages {
         let future = translate_text(
@@ -96,7 +98,7 @@ async fn test_multiple_languages_with_timeout() {
         );
 
         let result = timeout(Duration::from_secs(2), future).await;
-        
+
         match result {
             Ok(inner_result) => {
                 assert!(inner_result.is_err());
@@ -121,7 +123,7 @@ async fn test_long_text() {
     );
 
     let result = timeout(Duration::from_secs(5), future).await;
-    
+
     match result {
         Ok(inner_result) => {
             assert!(inner_result.is_err());

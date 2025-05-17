@@ -1,40 +1,43 @@
 use gtk::prelude::*;
-use gtk::{glib, gdk, Application, ApplicationWindow, Label, Button, ToggleButton, Box as GtkBox, Orientation, Align};
-use std::rc::Rc;
+use gtk::{
+    gdk, glib, Align, Application, ApplicationWindow, Box as GtkBox, Button, Label, Orientation,
+    ToggleButton,
+};
 use std::cell::RefCell;
 use std::env;
+use std::rc::Rc;
 use tokio::time::{timeout, Duration};
 // Use lingua::Language directly
-use lingua::{LanguageDetectorBuilder, Language};
+use lingua::{Language, LanguageDetectorBuilder};
 
+use crate::clone;
 use crate::config::Config; // Import Config struct
 use crate::settings; // Import settings module
-use crate::translation::request_translation;
-use crate::clone; // Import the clone macro
+use crate::translation::request_translation; // Import the clone macro
 
 /// Implements the language selection algorithm from README.md
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `source_lang` - The detected source language (Option<Language>)
 /// * `primary_lang` - The user's primary language
 /// * `secondary_lang` - The user's secondary language
 /// * `last_lang` - The last selected target language
-/// 
+///
 /// # Returns
-/// 
+///
 /// The selected target language based on the algorithm
 pub fn choose_target_language(
     source_lang: Option<Language>,
     primary_lang: Language,
     secondary_lang: Language,
-    last_lang: Language
+    last_lang: Language,
 ) -> Language {
     // 1. If the source isn't the primary language, translate into the primary language
     let is_source_primary = source_lang
         .map(|detected| detected == primary_lang)
         .unwrap_or(false);
-    
+
     if !is_source_primary {
         // Rule 1: If source isn't primary language, translate to primary
         primary_lang
@@ -62,7 +65,6 @@ fn update_active_button_simple(
     }
 }
 
-
 // Modified function signature to accept initial Config
 pub fn build_ui(app: &Application, initial_config: Config) {
     // --- State Management ---
@@ -78,14 +80,18 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     // Only load languages we need for detection from config
     let detector = {
         let config = config_rc.borrow();
-        let detection_languages = vec![
-            config.primary_language,
-        ];
-        
-        println!("Setting up language detector with: {:?}", detection_languages);
-        Rc::new(LanguageDetectorBuilder::from_languages(&detection_languages).with_low_accuracy_mode().build())
-    };
+        let detection_languages = vec![config.primary_language];
 
+        println!(
+            "Setting up language detector with: {:?}",
+            detection_languages
+        );
+        Rc::new(
+            LanguageDetectorBuilder::from_languages(&detection_languages)
+                .with_low_accuracy_mode()
+                .build(),
+        )
+    };
 
     // --- UI Elements ---
 
@@ -108,15 +114,17 @@ pub fn build_ui(app: &Application, initial_config: Config) {
 
     // --- Create Language Buttons Dynamically ---
     // Store buttons in a Vec with lingua::Language
-    let language_buttons_rc: Rc<RefCell<Vec<(Language, Rc<RefCell<ToggleButton>>)>>> = Rc::new(RefCell::new(Vec::new()));
-    { // Scope for borrowing config_rc and language_buttons_rc mutably
+    let language_buttons_rc: Rc<RefCell<Vec<(Language, Rc<RefCell<ToggleButton>>)>>> =
+        Rc::new(RefCell::new(Vec::new()));
+    {
+        // Scope for borrowing config_rc and language_buttons_rc mutably
         let mut buttons_mut = language_buttons_rc.borrow_mut();
         let config = config_rc.borrow(); // Borrow immutably to read all_target_languages
 
         if config.all_target_languages.is_empty() {
-             // Handle case where config might somehow have an empty list despite defaults
-             eprintln!("Error: No target languages defined in configuration!");
-             // Maybe add a fallback label here?
+            // Handle case where config might somehow have an empty list despite defaults
+            eprintln!("Error: No target languages defined in configuration!");
+            // Maybe add a fallback label here?
         } else {
             for lang in &config.all_target_languages {
                 // Get the ISO code and convert to string
@@ -129,7 +137,6 @@ pub fn build_ui(app: &Application, initial_config: Config) {
             }
         }
     } // Mutable borrow of language_buttons_rc drops here
-
 
     // Vertical box for content (label + copy button)
     let content_vbox = GtkBox::builder()
@@ -154,7 +161,6 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     main_vbox.append(&lang_hbox);
     main_vbox.append(&content_vbox);
 
-
     // --- Initial Load & Translation ---
     let display = gdk::Display::default().expect("Could not get default display");
     let clipboard = display.clipboard();
@@ -167,7 +173,6 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     let detector_clone_init = detector.clone(); // Clone detector for the async block
     let language_buttons_rc_clone_init = language_buttons_rc.clone(); // Clone buttons Vec Rc
 
-
     glib::spawn_future_local(async move {
         // 1. Read API Key once (still reading from env var for now)
         match env::var("OPENROUTER_API_KEY") {
@@ -175,32 +180,36 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 *api_key_rc_clone_init.borrow_mut() = Some(key);
             }
             Err(_) => {
-                label_clone_init.set_text("Error: OPENROUTER_API_KEY environment variable not set.");
+                label_clone_init
+                    .set_text("Error: OPENROUTER_API_KEY environment variable not set.");
                 // Update button state even on error (show last language from settings)
                 let lang_to_show = last_target_language; // Use last_target_language (lingua::Language) from settings
-                // Use the imported clone macro
-                glib::idle_add_local_once(clone!(@strong language_buttons_rc_clone_init => move || {
-                    update_active_button_simple(lang_to_show, &language_buttons_rc_clone_init.borrow());
-                }));
+                                                         // Use the imported clone macro
+                glib::idle_add_local_once(
+                    clone!(@strong language_buttons_rc_clone_init => move || {
+                        update_active_button_simple(lang_to_show, &language_buttons_rc_clone_init.borrow());
+                    }),
+                );
                 return; // Stop if no API key
             }
         }
 
         // 2. Read text from clipboard once
         match clipboard.read_text_future().await {
-            Ok(Some(gstring_text)) => { // text is glib::GString here
+            Ok(Some(gstring_text)) => {
+                // text is glib::GString here
                 let text = gstring_text.to_string(); // Convert to String
                 *original_text_rc_clone_init.borrow_mut() = Some(text.clone()); // Store original text as String
 
                 // --- Performance Logging Start ---
                 let start_time = std::time::Instant::now();
                 println!("Starting language detection at {:?}", start_time);
-                
+
                 // --- Language Detection with Timeout ---
                 // detected_language is Option<lingua::Language>
                 println!("Text length for detection: {} characters", text.len());
                 let detection_start = std::time::Instant::now();
-                
+
                 // Only use a small sample of text for detection (first 100 chars or less)
                 // Use a safe way to truncate that respects UTF-8 character boundaries
                 let sample_text = if text.chars().count() > 100 {
@@ -209,27 +218,30 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 } else {
                     text.clone()
                 };
-                
+
                 // Add timeout to prevent long detection times
                 let detected_source_lang = match timeout(
                     Duration::from_secs(2), // 2 second timeout
-                    async {
-                        detector_clone_init.detect_language_of(sample_text)
-                    }
-                ).await {
+                    async { detector_clone_init.detect_language_of(sample_text) },
+                )
+                .await
+                {
                     Ok(lang) => lang,
                     Err(_) => {
                         println!("Language detection timed out after 2 seconds");
                         None // Return None if detection times out
                     }
                 };
-                
+
                 let detection_duration = detection_start.elapsed();
                 println!("Language detection took: {:?}", detection_duration);
 
                 if let Some(lang) = detected_source_lang {
                     println!("Detected source language: {:?}", lang); // Log detected language
-                    println!("Total time from start to detection: {:?}", start_time.elapsed());
+                    println!(
+                        "Total time from start to detection: {:?}",
+                        start_time.elapsed()
+                    );
                 } else {
                     println!("Could not detect source language.");
                 }
@@ -239,61 +251,82 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                     let config = config_rc_clone_init.borrow();
                     (config.primary_language, config.secondary_language)
                 };
-                
+
                 // Use the extracted function for language selection
                 let mut final_target_lang = choose_target_language(
                     detected_source_lang,
                     primary_lang,
                     secondary_lang,
-                    last_target_language
+                    last_target_language,
                 );
-                
+
                 // Log the decision
                 match detected_source_lang {
                     Some(src) if src != primary_lang => {
-                        println!("Source is not primary language -> Translating to primary ({:?})", primary_lang);
-                    },
+                        println!(
+                            "Source is not primary language -> Translating to primary ({:?})",
+                            primary_lang
+                        );
+                    }
                     Some(_) => {
                         if last_target_language != primary_lang {
                             println!("Source is primary language and last target ({:?}) is meaningful -> Using last target", last_target_language);
                         } else {
                             println!("Source is primary language and no meaningful last target -> Using secondary ({:?})", secondary_lang);
                         }
-                    },
+                    }
                     None => {
-                        println!("Could not detect source language -> Using primary language ({:?})", primary_lang);
+                        println!(
+                            "Could not detect source language -> Using primary language ({:?})",
+                            primary_lang
+                        );
                     }
                 }
 
                 // Ensure the final_target_lang is actually available in the UI buttons
-                let is_target_available = config_rc_clone_init.borrow().all_target_languages.contains(&final_target_lang);
+                let is_target_available = config_rc_clone_init
+                    .borrow()
+                    .all_target_languages
+                    .contains(&final_target_lang);
                 if !is_target_available {
                     println!("Warning: Auto-selected target language {:?} is not in 'all_target_languages'. Reverting to last target {:?}", final_target_lang, last_target_language);
                     final_target_lang = last_target_language; // Revert if not available
-                    // Also ensure the last_target_language itself is available, otherwise pick the first from config?
-                    if !config_rc_clone_init.borrow().all_target_languages.contains(&final_target_lang) {
+                                                              // Also ensure the last_target_language itself is available, otherwise pick the first from config?
+                    if !config_rc_clone_init
+                        .borrow()
+                        .all_target_languages
+                        .contains(&final_target_lang)
+                    {
                         println!("Warning: Last target language {:?} is also not in 'all_target_languages'. Using first available.", final_target_lang);
-                        final_target_lang = config_rc_clone_init.borrow().all_target_languages.first().cloned().unwrap_or(Language::English); // Fallback to English if list is somehow empty
+                        final_target_lang = config_rc_clone_init
+                            .borrow()
+                            .all_target_languages
+                            .first()
+                            .cloned()
+                            .unwrap_or(Language::English); // Fallback to English if list is somehow empty
                     }
                 }
-
 
                 // Update last_target_language in settings if the target language changed
                 if final_target_lang != last_target_language {
                     if let Err(e) = settings::save_last_language(final_target_lang) {
                         eprintln!("Failed to save last language after auto-switch: {}", e);
                     } else {
-                        println!("Target language automatically set to: {:?} and saved.", final_target_lang);
+                        println!(
+                            "Target language automatically set to: {:?} and saved.",
+                            final_target_lang
+                        );
                     }
                 } else {
                     println!("Target language remains: {:?}", final_target_lang);
                 }
 
                 // Update buttons in the main thread (always run this to set initial state correctly based on final_target_lang)
-                glib::idle_add_local_once(clone!(@strong language_buttons_rc_clone_init => move || {
-                    update_active_button_simple(final_target_lang, &language_buttons_rc_clone_init.borrow());
-                }));
-
+                glib::idle_add_local_once(
+                    clone!(@strong language_buttons_rc_clone_init => move || {
+                        update_active_button_simple(final_target_lang, &language_buttons_rc_clone_init.borrow());
+                    }),
+                );
 
                 // 3. Perform translation with the determined final language
                 let (api_url, model_version) = {
@@ -302,36 +335,41 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 };
 
                 if let Some(key) = api_key_rc_clone_init.borrow().as_ref() {
-                     request_translation(
-                         text,
-                         final_target_lang, // Use the determined target language (lingua::Language)
-                         key.clone(),
-                         api_url,
-                         model_version,
-                         label_clone_init
-                     ).await;
+                    request_translation(
+                        text,
+                        final_target_lang, // Use the determined target language (lingua::Language)
+                        key.clone(),
+                        api_url,
+                        model_version,
+                        label_clone_init,
+                    )
+                    .await;
                 } else {
-                     label_clone_init.set_text("Error retrieving API key for translation.");
+                    label_clone_init.set_text("Error retrieving API key for translation.");
                 }
             }
             Ok(None) => {
                 label_clone_init.set_text("Clipboard does not contain text.");
                 *original_text_rc_clone_init.borrow_mut() = None; // Ensure it's None
-                // Update button state even if clipboard is empty
+                                                                  // Update button state even if clipboard is empty
                 let lang_to_show = last_target_language; // Use last_target_language from settings
-                 glib::idle_add_local_once(clone!(@strong language_buttons_rc_clone_init => move || {
-                    update_active_button_simple(lang_to_show, &language_buttons_rc_clone_init.borrow());
-                }));
+                glib::idle_add_local_once(
+                    clone!(@strong language_buttons_rc_clone_init => move || {
+                        update_active_button_simple(lang_to_show, &language_buttons_rc_clone_init.borrow());
+                    }),
+                );
             }
             Err(e) => {
                 eprintln!("Error reading clipboard: {}", e);
                 label_clone_init.set_text(&format!("Error reading clipboard: {}", e));
                 *original_text_rc_clone_init.borrow_mut() = None; // Ensure it's None
-                 // Update button state even on error
+                                                                  // Update button state even on error
                 let lang_to_show = last_target_language; // Use last_target_language from settings
-                 glib::idle_add_local_once(clone!(@strong language_buttons_rc_clone_init => move || {
-                    update_active_button_simple(lang_to_show, &language_buttons_rc_clone_init.borrow());
-                }));
+                glib::idle_add_local_once(
+                    clone!(@strong language_buttons_rc_clone_init => move || {
+                        update_active_button_simple(lang_to_show, &language_buttons_rc_clone_init.borrow());
+                    }),
+                );
             }
         }
     });
@@ -450,16 +488,16 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     };
 
     // Connect the handler to each button
-    { // Scope for borrowing language_buttons_rc
+    {
+        // Scope for borrowing language_buttons_rc
         let buttons = language_buttons_rc.borrow();
         for (lang, button_rc) in buttons.iter() {
             button_rc.borrow().connect_toggled(
                 // Create a unique handler closure for each button
-                create_lang_button_handler(*lang, language_buttons_rc.clone())
+                create_lang_button_handler(*lang, language_buttons_rc.clone()),
             );
         }
     } // Borrow drops here
-
 
     // --- Copy Button Click Handler Setup ---
     let label_clone_copy = label.clone();

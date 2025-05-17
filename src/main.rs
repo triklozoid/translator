@@ -4,9 +4,9 @@ mod settings;
 mod translation;
 mod ui;
 
+use dotenvy::dotenv;
 use gtk::prelude::*;
 use gtk::{glib, Application};
-use dotenvy::dotenv;
 
 const APP_ID: &str = "org.gtk_rs.ClipboardTranslator";
 
@@ -34,7 +34,6 @@ async fn main() -> glib::ExitCode {
     // Run the application
     app.run()
 }
-
 
 // Helper macro for cloning Rc variables for closures
 // Keep it here or move to a dedicated utils module if needed elsewhere

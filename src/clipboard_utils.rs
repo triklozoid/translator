@@ -29,7 +29,10 @@ pub async fn read_clipboard_text(clipboard: &gdk::Clipboard) -> Result<String, C
     match text_future.await {
         Ok(Some(text)) => Ok(text.to_string()),
         Ok(None) => Err(ClipboardError::from("Clipboard text is empty.".to_string())),
-        Err(e) => Err(ClipboardError::from(format!("Failed to read from clipboard: {}", e))),
+        Err(e) => Err(ClipboardError::from(format!(
+            "Failed to read from clipboard: {}",
+            e
+        ))),
     }
 }
 

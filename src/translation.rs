@@ -1,13 +1,15 @@
 // Use lingua::Language directly
-use lingua::Language;
 use async_openai::{
+    config::OpenAIConfig,
+    error::OpenAIError,
     types::{
         ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
         CreateChatCompletionRequestArgs,
     },
-    Client, config::OpenAIConfig, error::OpenAIError,
+    Client,
 };
 use gtk::Label;
+use lingua::Language;
 
 // Result type for translations
 pub type TranslationResult = Result<String, String>;
@@ -68,7 +70,10 @@ pub async fn translate_text(
                 Err(e) => {
                     // Provide more specific error feedback if possible
                     let error_message = match e {
-                        OpenAIError::ApiError(api_err) => format!("API Error: {} (Type: {:?}, Code: {:?})", api_err.message, api_err.r#type, api_err.code),
+                        OpenAIError::ApiError(api_err) => format!(
+                            "API Error: {} (Type: {:?}, Code: {:?})",
+                            api_err.message, api_err.r#type, api_err.code
+                        ),
                         OpenAIError::Reqwest(req_err) => format!("Network Error: {}", req_err),
                         _ => format!("API Error: {}", e),
                     };
@@ -76,9 +81,7 @@ pub async fn translate_text(
                 }
             }
         }
-        Err(e) => {
-            Err(format!("Error building request: {}", e))
-        }
+        Err(e) => Err(format!("Error building request: {}", e)),
     }
 }
 
@@ -93,7 +96,10 @@ pub async fn request_translation(
     label_to_update: Label,
 ) {
     // Update UI to show translation in progress
-    label_to_update.set_label(&format!("Translating to {}...", target_language.to_string()));
+    label_to_update.set_label(&format!(
+        "Translating to {}...",
+        target_language.to_string()
+    ));
 
     // Call core translation function
     match translate_text(
@@ -101,8 +107,10 @@ pub async fn request_translation(
         target_language,
         api_key,
         api_url,
-        model_version
-    ).await {
+        model_version,
+    )
+    .await
+    {
         Ok(translated_text) => {
             label_to_update.set_text(&translated_text);
         }
@@ -112,4 +120,3 @@ pub async fn request_translation(
         }
     }
 }
-

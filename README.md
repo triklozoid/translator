@@ -1,5 +1,8 @@
 # Clipboard Translator
 
+[![CI](https://github.com/yourusername/translator/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/translator/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/yourusername/translator/branch/main/graph/badge.svg)](https://codecov.io/gh/yourusername/translator)
+
 ![Clipboard Translator Screenshot](images/1.png)
 
 A lightweight, intelligent clipboard translation tool that automatically detects the source language and selects the appropriate target language based on your preferences.

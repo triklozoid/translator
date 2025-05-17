@@ -9,11 +9,17 @@ const LAST_LANG_FILE: &str = "last_language.txt"; // Store ISO code
 
 // --- Helper function to get last language file path ---
 fn get_last_lang_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|mut path| {
-        path.push(SETTINGS_DIR);
-        path.push(LAST_LANG_FILE);
-        path
-    })
+    // Check XDG_CONFIG_HOME first, then fall back to dirs::config_dir()
+    let config_dir = if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
+        PathBuf::from(xdg_config)
+    } else {
+        dirs::config_dir()?
+    };
+    
+    let mut path = config_dir;
+    path.push(SETTINGS_DIR);
+    path.push(LAST_LANG_FILE);
+    Some(path)
 }
 
 // --- Helper function to load last language from settings ---

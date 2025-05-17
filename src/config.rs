@@ -136,11 +136,17 @@ impl Default for Config {
 // --- Configuration Loading and Saving ---
 
 fn get_config_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|mut path| {
-        path.push(CONFIG_DIR);
-        path.push(CONFIG_FILE);
-        path
-    })
+    // Check XDG_CONFIG_HOME first, then fall back to dirs::config_dir()
+    let config_dir = if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
+        PathBuf::from(xdg_config)
+    } else {
+        dirs::config_dir()?
+    };
+    
+    let mut path = config_dir;
+    path.push(CONFIG_DIR);
+    path.push(CONFIG_FILE);
+    Some(path)
 }
 
 pub fn load_config() -> Config {

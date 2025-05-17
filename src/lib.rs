@@ -3,6 +3,10 @@ pub mod config;
 pub mod settings;
 pub mod translation;
 pub mod ui;
+pub mod clipboard_utils;
+
+// Re-export commonly used items
+pub use translation::{request_translation, translate_text, TranslationResult};
 
 // Re-export the clone macro for use in tests
 #[macro_export]

@@ -40,7 +40,7 @@ pub async fn translate_text(
         .model(model_version)
         .messages([
             ChatCompletionRequestSystemMessageArgs::default()
-                .content(format!("You are a helpful assistant that translates text into {}. Provide only the translation text and nothing else.", target_language.to_string()))
+                .content(format!("You are a helpful assistant that translates text into {}. Provide only the translation text and nothing else.", target_language))
                 .build()
                 .map_err(|e| format!("Failed to build system message: {}", e))?
                 .into(),
@@ -57,7 +57,7 @@ pub async fn translate_text(
             // Call API
             match client.chat().create(request).await {
                 Ok(response) => {
-                    if let Some(choice) = response.choices.get(0) {
+                    if let Some(choice) = response.choices.first() {
                         if let Some(translated_text) = &choice.message.content {
                             Ok(translated_text.trim().to_string())
                         } else {
@@ -96,10 +96,7 @@ pub async fn request_translation(
     label_to_update: Label,
 ) {
     // Update UI to show translation in progress
-    label_to_update.set_label(&format!(
-        "Translating to {}...",
-        target_language.to_string()
-    ));
+    label_to_update.set_label(&format!("Translating to {}...", target_language));
 
     // Call core translation function
     match translate_text(

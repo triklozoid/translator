@@ -10,6 +10,10 @@ use tokio::time::{timeout, Duration};
 // Use lingua::Language directly
 use lingua::{Language, LanguageDetectorBuilder};
 
+// Type aliases to reduce complexity
+type LanguageButtonRc = Rc<RefCell<ToggleButton>>;
+type LanguageButtonsVec = Vec<(Language, LanguageButtonRc)>;
+
 use crate::clone;
 use crate::config::Config; // Import Config struct
 use crate::settings; // Import settings module
@@ -114,8 +118,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
 
     // --- Create Language Buttons Dynamically ---
     // Store buttons in a Vec with lingua::Language
-    let language_buttons_rc: Rc<RefCell<Vec<(Language, Rc<RefCell<ToggleButton>>)>>> =
-        Rc::new(RefCell::new(Vec::new()));
+    let language_buttons_rc: Rc<RefCell<LanguageButtonsVec>> = Rc::new(RefCell::new(Vec::new()));
     {
         // Scope for borrowing config_rc and language_buttons_rc mutably
         let mut buttons_mut = language_buttons_rc.borrow_mut();
@@ -334,7 +337,8 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                     (config.api_url.clone(), config.model_version.clone())
                 };
 
-                if let Some(key) = api_key_rc_clone_init.borrow().as_ref() {
+                let api_key_clone = api_key_rc_clone_init.borrow().clone();
+                if let Some(key) = api_key_clone.as_ref() {
                     request_translation(
                         text,
                         final_target_lang, // Use the determined target language (lingua::Language)
@@ -385,9 +389,10 @@ pub fn build_ui(app: &Application, initial_config: Config) {
 
     // --- Language Button Toggle Handlers ---
     // Define the handler logic once
-    let create_lang_button_handler = |
+    let create_lang_button_handler =
+        |
         button_lang: Language, // The language this specific button represents (lingua::Language)
-        all_buttons_rc: Rc<RefCell<Vec<(Language, Rc<RefCell<ToggleButton>>)>>> // Rc to the Vec of all buttons
+        all_buttons_rc: Rc<RefCell<LanguageButtonsVec>> // Rc to the Vec of all buttons
     | {
         // Clone necessary items for the handler closure
         let config_rc_handler = config_rc.clone(); // Clone config Rc

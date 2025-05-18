@@ -7,12 +7,21 @@ mod ui;
 use dotenvy::dotenv;
 use gtk::prelude::*;
 use gtk::{glib, Application};
+use single_instance::SingleInstance;
 
 const APP_ID: &str = "org.gtk_rs.ClipboardTranslator";
 
 // Use tokio runtime for async operations
 #[tokio::main]
 async fn main() -> glib::ExitCode {
+    // Check for single instance
+    let instance = SingleInstance::new(APP_ID).unwrap();
+    if !instance.is_single() {
+        println!("Another instance of the translator is already running!");
+        // TODO: Implement IPC to send focus request to existing instance
+        return glib::ExitCode::FAILURE;
+    }
+    
     // Load environment variables from .env file if present
     dotenv().ok(); // This is still useful for API keys, etc.
 
@@ -31,8 +40,11 @@ async fn main() -> glib::ExitCode {
         ui::build_ui(app, initial_config.clone()); // Pass the config
     });
 
-    // Run the application
-    app.run()
+    // Run the application (instance will be dropped when we exit)
+    let exit_code = app.run();
+    
+    // Instance is automatically dropped here, releasing the lock
+    exit_code
 }
 
 // Helper macro for cloning Rc variables for closures

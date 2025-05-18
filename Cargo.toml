@@ -15,6 +15,7 @@ lingua = { version = "1.7.0", features = ["english", "french", "italian", "polis
 toml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 dirs = "5.0" # For finding standard directories like XDG_CONFIG_HOME
+single-instance = "0.3" # For single instance application
 
 [dev-dependencies]
 tempfile = "3.8.1"

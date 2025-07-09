@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use std::env;
 use std::rc::Rc;
 use tokio::time::{timeout, Duration};
+use tokio::sync::oneshot;
 // Use lingua::Language directly
 use lingua::{Language, LanguageDetectorBuilder};
 
@@ -79,6 +80,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     let last_target_language = settings::load_last_language();
     let original_clipboard_text = Rc::new(RefCell::new(None::<String>));
     let api_key_rc = Rc::new(RefCell::new(None::<String>)); // Keep API key separate
+    let cancel_sender_rc = Rc::new(RefCell::new(None::<oneshot::Sender<()>>)); // For cancellation
 
     // --- Lingua Detector ---
     // Only load languages we need for detection from config
@@ -346,6 +348,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                         api_url,
                         model_version,
                         label_clone_init,
+                        None, // No cancellation for initial translation
                     )
                     .await;
                 } else {
@@ -399,6 +402,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
         let text_rc = original_clipboard_text.clone();
         let key_rc = api_key_rc.clone();
         let label_clone = label.clone();
+        let cancel_sender_rc_clone = cancel_sender_rc.clone(); // Clone cancel sender
         // Clone the Rc to the button vector for use inside the closure
         let all_buttons_rc_clone = all_buttons_rc.clone();
 
@@ -441,15 +445,26 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                     let maybe_key = key_rc.borrow().clone();
 
                     if let (Some(text), Some(key)) = (maybe_text, maybe_key) {
-                         // Spawn a new future for the translation request
-                         glib::spawn_future_local(request_translation(
-                             text,
-                             button_lang, // Use newly set language (lingua::Language)
-                             key,
-                             api_url,
-                             model_version,
-                             label_clone.clone(),
-                         ));
+                        // Cancel any ongoing translation
+                        if let Some(cancel_sender) = cancel_sender_rc_clone.borrow_mut().take() {
+                            let _ = cancel_sender.send(()); // Send cancel signal, ignore result
+                            println!("Cancelled previous translation");
+                        }
+
+                        // Create new cancellation channel for the new translation
+                        let (cancel_tx, cancel_rx) = oneshot::channel();
+                        *cancel_sender_rc_clone.borrow_mut() = Some(cancel_tx);
+
+                        // Spawn a new future for the translation request
+                        glib::spawn_future_local(request_translation(
+                            text,
+                            button_lang, // Use newly set language (lingua::Language)
+                            key,
+                            api_url,
+                            model_version,
+                            label_clone.clone(),
+                            Some(cancel_rx), // Pass cancellation receiver
+                        ));
                     } else {
                          println!("No original text or API key available to translate.");
                          label_clone.set_text("Cannot translate: Missing original text or API key.");

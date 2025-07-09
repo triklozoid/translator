@@ -10,6 +10,7 @@ async fn test_empty_text() {
         "test-key".to_string(),
         "http://127.0.0.1:9999".to_string(), // Use local unreachable address
         "gpt-3.5-turbo".to_string(),
+        None, // No cancellation for tests
     )
     .await;
 
@@ -25,6 +26,7 @@ async fn test_whitespace_only_text() {
         "test-key".to_string(),
         "http://127.0.0.1:9999".to_string(),
         "gpt-3.5-turbo".to_string(),
+        None, // No cancellation for tests
     )
     .await;
 
@@ -40,6 +42,7 @@ async fn test_network_error_with_timeout() {
         "test-key".to_string(),
         "http://127.0.0.1:9999".to_string(), // Local unreachable address
         "gpt-3.5-turbo".to_string(),
+        None, // No cancellation for tests
     );
 
     let result = timeout(Duration::from_secs(5), future).await;
@@ -69,6 +72,7 @@ async fn test_single_language() {
         "test-key".to_string(),
         "http://127.0.0.1:9999".to_string(),
         "gpt-3.5-turbo".to_string(),
+        None, // No cancellation for tests
     );
 
     let result = timeout(Duration::from_secs(5), future).await;
@@ -95,6 +99,7 @@ async fn test_multiple_languages_with_timeout() {
             "test-key".to_string(),
             "http://127.0.0.1:9999".to_string(),
             "gpt-3.5-turbo".to_string(),
+            None, // No cancellation for tests
         );
 
         let result = timeout(Duration::from_secs(2), future).await;
@@ -120,6 +125,7 @@ async fn test_long_text() {
         "test-key".to_string(),
         "http://127.0.0.1:9999".to_string(),
         "gpt-3.5-turbo".to_string(),
+        None, // No cancellation for tests
     );
 
     let result = timeout(Duration::from_secs(5), future).await;

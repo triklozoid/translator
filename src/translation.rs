@@ -10,17 +10,19 @@ use async_openai::{
 };
 use gtk::Label;
 use lingua::Language;
+use tokio::sync::oneshot;
 
 // Result type for translations
 pub type TranslationResult = Result<String, String>;
 
-// Core translation function without UI dependencies
+// Core translation function without UI dependencies with cancellation support
 pub async fn translate_text(
     text_to_translate: &str,
     target_language: Language,
     api_key: String,
     api_url: String,
     model_version: String,
+    cancel_receiver: Option<oneshot::Receiver<()>>,
 ) -> TranslationResult {
     // Check if text is empty before making API call
     if text_to_translate.trim().is_empty() {
@@ -54,30 +56,27 @@ pub async fn translate_text(
 
     match request_result {
         Ok(request) => {
-            // Call API
-            match client.chat().create(request).await {
-                Ok(response) => {
-                    if let Some(choice) = response.choices.first() {
-                        if let Some(translated_text) = &choice.message.content {
-                            Ok(translated_text.trim().to_string())
-                        } else {
-                            Err("API returned no translation content.".to_string())
+            // Get chat client
+            let chat_client = client.chat();
+            // Create the API call future
+            let api_future = chat_client.create(request);
+            
+            // Handle cancellation if provided
+            match cancel_receiver {
+                Some(cancel_rx) => {
+                    tokio::select! {
+                        result = api_future => {
+                            process_api_response(result)
                         }
-                    } else {
-                        Err("API returned no choices.".to_string())
+                        _ = cancel_rx => {
+                            Err("Translation cancelled".to_string())
+                        }
                     }
                 }
-                Err(e) => {
-                    // Provide more specific error feedback if possible
-                    let error_message = match e {
-                        OpenAIError::ApiError(api_err) => format!(
-                            "API Error: {} (Type: {:?}, Code: {:?})",
-                            api_err.message, api_err.r#type, api_err.code
-                        ),
-                        OpenAIError::Reqwest(req_err) => format!("Network Error: {}", req_err),
-                        _ => format!("API Error: {}", e),
-                    };
-                    Err(error_message)
+                None => {
+                    // No cancellation, proceed normally
+                    let result = api_future.await;
+                    process_api_response(result)
                 }
             }
         }
@@ -85,8 +84,37 @@ pub async fn translate_text(
     }
 }
 
+// Helper function to process API response
+fn process_api_response(result: Result<async_openai::types::CreateChatCompletionResponse, OpenAIError>) -> TranslationResult {
+    match result {
+        Ok(response) => {
+            if let Some(choice) = response.choices.first() {
+                if let Some(translated_text) = &choice.message.content {
+                    Ok(translated_text.trim().to_string())
+                } else {
+                    Err("API returned no translation content.".to_string())
+                }
+            } else {
+                Err("API returned no choices.".to_string())
+            }
+        }
+        Err(e) => {
+            // Provide more specific error feedback if possible
+            let error_message = match e {
+                OpenAIError::ApiError(api_err) => format!(
+                    "API Error: {} (Type: {:?}, Code: {:?})",
+                    api_err.message, api_err.r#type, api_err.code
+                ),
+                OpenAIError::Reqwest(req_err) => format!("Network Error: {}", req_err),
+                _ => format!("API Error: {}", e),
+            };
+            Err(error_message)
+        }
+    }
+}
+
 // --- Helper function to request translation ---
-// UI wrapper around core translation function
+// UI wrapper around core translation function with cancellation support
 pub async fn request_translation(
     text_to_translate: String,
     target_language: Language,
@@ -94,6 +122,7 @@ pub async fn request_translation(
     api_url: String,
     model_version: String,
     label_to_update: Label,
+    cancel_receiver: Option<oneshot::Receiver<()>>,
 ) {
     // Update UI to show translation in progress
     label_to_update.set_label(&format!("Translating to {}...", target_language));
@@ -105,6 +134,7 @@ pub async fn request_translation(
         api_key,
         api_url,
         model_version,
+        cancel_receiver,
     )
     .await
     {
@@ -112,8 +142,11 @@ pub async fn request_translation(
             label_to_update.set_text(&translated_text);
         }
         Err(error_message) => {
-            eprintln!("Translation Error: {}", error_message);
-            label_to_update.set_text(&error_message);
+            // Don't show cancelled messages to avoid confusion
+            if error_message != "Translation cancelled" {
+                eprintln!("Translation Error: {}", error_message);
+                label_to_update.set_text(&error_message);
+            }
         }
     }
 }

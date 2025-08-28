@@ -65,6 +65,7 @@ async fn test_translation_workflow() {
             "http://127.0.0.1:9999".to_string(),
             "test-model".to_string(),
             None, // No cancellation for tests
+            None, // No logger for tests
         )
         .await;
 
@@ -178,6 +179,7 @@ async fn test_error_handling_integration() {
         "http://invalid.url".to_string(),
         "invalid-model".to_string(),
         None, // No cancellation for tests
+        None, // No logger for tests
     )
     .await;
 

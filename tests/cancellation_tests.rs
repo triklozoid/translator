@@ -16,6 +16,7 @@ async fn test_translation_cancellation() {
         "http://127.0.0.1:9999".to_string(), // Unreachable URL to simulate long request
         "gpt-3.5-turbo".to_string(),
         Some(cancel_rx),
+        None, // No logger for tests
     );
     
     // Cancel immediately
@@ -48,6 +49,7 @@ async fn test_translation_without_cancellation() {
         "http://127.0.0.1:9999".to_string(),
         "gpt-3.5-turbo".to_string(),
         None, // No cancellation
+        None, // No logger for tests
     )
     .await;
     

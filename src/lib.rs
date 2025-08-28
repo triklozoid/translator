@@ -1,12 +1,14 @@
 // Declare and re-export modules
 pub mod clipboard_utils;
 pub mod config;
+pub mod logger;
 pub mod settings;
 pub mod translation;
 pub mod ui;
 
 // Re-export commonly used items
 pub use translation::{request_translation, translate_text, TranslationResult};
+pub use logger::Logger;
 
 // Re-export the clone macro for use in tests
 #[macro_export]

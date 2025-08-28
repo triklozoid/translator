@@ -1,6 +1,6 @@
 use lingua::Language;
 use tokio::time::{timeout, Duration};
-use translator::{translate_text, TranslationResult};
+use translator::translate_text;
 
 #[tokio::test]
 async fn test_empty_text() {
@@ -11,6 +11,7 @@ async fn test_empty_text() {
         "http://127.0.0.1:9999".to_string(), // Use local unreachable address
         "gpt-3.5-turbo".to_string(),
         None, // No cancellation for tests
+        None, // No logger for tests
     )
     .await;
 
@@ -27,6 +28,7 @@ async fn test_whitespace_only_text() {
         "http://127.0.0.1:9999".to_string(),
         "gpt-3.5-turbo".to_string(),
         None, // No cancellation for tests
+        None, // No logger for tests
     )
     .await;
 
@@ -43,6 +45,7 @@ async fn test_network_error_with_timeout() {
         "http://127.0.0.1:9999".to_string(), // Local unreachable address
         "gpt-3.5-turbo".to_string(),
         None, // No cancellation for tests
+        None, // No logger for tests
     );
 
     let result = timeout(Duration::from_secs(5), future).await;
@@ -73,6 +76,7 @@ async fn test_single_language() {
         "http://127.0.0.1:9999".to_string(),
         "gpt-3.5-turbo".to_string(),
         None, // No cancellation for tests
+        None, // No logger for tests
     );
 
     let result = timeout(Duration::from_secs(5), future).await;
@@ -100,6 +104,7 @@ async fn test_multiple_languages_with_timeout() {
             "http://127.0.0.1:9999".to_string(),
             "gpt-3.5-turbo".to_string(),
             None, // No cancellation for tests
+            None, // No logger for tests
         );
 
         let result = timeout(Duration::from_secs(2), future).await;
@@ -126,6 +131,7 @@ async fn test_long_text() {
         "http://127.0.0.1:9999".to_string(),
         "gpt-3.5-turbo".to_string(),
         None, // No cancellation for tests
+        None, // No logger for tests
     );
 
     let result = timeout(Duration::from_secs(5), future).await;

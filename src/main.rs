@@ -1,9 +1,11 @@
 // Declare modules
 mod config;
+mod logger;
 mod settings;
 mod translation;
 mod ui;
 
+use clap::Parser;
 use dotenvy::dotenv;
 use gtk::prelude::*;
 use gtk::{glib, Application};
@@ -11,9 +13,20 @@ use single_instance::SingleInstance;
 
 const APP_ID: &str = "org.gtk_rs.ClipboardTranslator";
 
+#[derive(Parser, Debug)]
+#[command(name = "translator")]
+#[command(about = "A clipboard translator application", long_about = None)]
+struct Args {
+    /// Enable debug mode to log prompts and LLM responses
+    #[arg(long)]
+    debug: bool,
+}
+
 // Use tokio runtime for async operations
 #[tokio::main]
 async fn main() -> glib::ExitCode {
+    // Parse command line arguments
+    let args = Args::parse();
     // Check for single instance
     let instance = SingleInstance::new(APP_ID).unwrap();
     if !instance.is_single() {
@@ -26,10 +39,19 @@ async fn main() -> glib::ExitCode {
     dotenv().ok(); // This is still useful for API keys, etc.
 
     // Load configuration from file (or defaults if not found/invalid)
-    let config = config::load_config();
+    let mut config = config::load_config();
+    
+    // Override debug setting with command line argument if provided
+    if args.debug {
+        config.debug = true;
+    }
 
     // Create a new application
-    let app = Application::builder().application_id(APP_ID).build();
+    // Use gio::ApplicationFlags::HANDLES_COMMAND_LINE to prevent GTK from parsing args
+    let app = Application::builder()
+        .application_id(APP_ID)
+        .flags(gtk::gio::ApplicationFlags::HANDLES_COMMAND_LINE)
+        .build();
 
     // Clone the config to move into the closure
     let initial_config = config.clone();
@@ -39,12 +61,16 @@ async fn main() -> glib::ExitCode {
     app.connect_activate(move |app| {
         ui::build_ui(app, initial_config.clone()); // Pass the config
     });
+    
+    // Handle command line to prevent GTK from complaining about unknown options
+    app.connect_command_line(|app, _| {
+        app.activate();
+        0 // Return success
+    });
 
     // Run the application (instance will be dropped when we exit)
-    let exit_code = app.run();
-    
     // Instance is automatically dropped here, releasing the lock
-    exit_code
+    app.run()
 }
 
 // Helper macro for cloning Rc variables for closures

@@ -102,6 +102,9 @@ pub struct Config {
     #[serde(deserialize_with = "language_serde::deserialize_vec")]
     // Use specific vec deserializer
     pub all_target_languages: Vec<Language>,
+    // Debug mode flag
+    #[serde(default)] // Default to false if missing in file
+    pub debug: bool,
 }
 
 // Function to provide default value for all_target_languages
@@ -128,6 +131,7 @@ impl Default for Config {
             primary_language: primary,
             secondary_language: secondary,
             all_target_languages: default_all_target_languages(),
+            debug: false,
         }
     }
 }

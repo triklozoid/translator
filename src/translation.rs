@@ -11,6 +11,7 @@ use async_openai::{
 use gtk::Label;
 use lingua::Language;
 use tokio::sync::oneshot;
+use crate::logger::Logger;
 
 // Result type for translations
 pub type TranslationResult = Result<String, String>;
@@ -23,6 +24,7 @@ pub async fn translate_text(
     api_url: String,
     model_version: String,
     cancel_receiver: Option<oneshot::Receiver<()>>,
+    logger: Option<&Logger>,
 ) -> TranslationResult {
     // Check if text is empty before making API call
     if text_to_translate.trim().is_empty() {
@@ -36,18 +38,27 @@ pub async fn translate_text(
 
     let client = Client::with_config(config);
 
+    // Prepare the prompt
+    let target_language_name = if target_language == Language::Portuguese {
+        "European Portuguese"
+    } else {
+        &target_language.to_string()
+    };
+    let system_prompt = format!("You are a helpful assistant that translates text into {}. Provide only the translation text and nothing else.", target_language_name);
+    let user_prompt = text_to_translate.to_string();
+
     // Create Translation Request using provided model version
     let request_result = CreateChatCompletionRequestArgs::default()
         .max_tokens(1024u16)
         .model(model_version)
         .messages([
             ChatCompletionRequestSystemMessageArgs::default()
-                .content(format!("You are a helpful assistant that translates text into {}. Provide only the translation text and nothing else.", target_language))
+                .content(system_prompt.clone())
                 .build()
                 .map_err(|e| format!("Failed to build system message: {}", e))?
                 .into(),
             ChatCompletionRequestUserMessageArgs::default()
-                .content(text_to_translate.to_string())
+                .content(user_prompt.clone())
                 .build()
                 .map_err(|e| format!("Failed to build user message: {}", e))?
                 .into(),
@@ -66,7 +77,7 @@ pub async fn translate_text(
                 Some(cancel_rx) => {
                     tokio::select! {
                         result = api_future => {
-                            process_api_response(result)
+                            process_api_response(result, logger, &format!("System: {}\nUser: {}", system_prompt, user_prompt), &target_language.to_string())
                         }
                         _ = cancel_rx => {
                             Err("Translation cancelled".to_string())
@@ -76,7 +87,7 @@ pub async fn translate_text(
                 None => {
                     // No cancellation, proceed normally
                     let result = api_future.await;
-                    process_api_response(result)
+                    process_api_response(result, logger, &format!("System: {}\nUser: {}", system_prompt, user_prompt), &target_language.to_string())
                 }
             }
         }
@@ -85,12 +96,24 @@ pub async fn translate_text(
 }
 
 // Helper function to process API response
-fn process_api_response(result: Result<async_openai::types::CreateChatCompletionResponse, OpenAIError>) -> TranslationResult {
+fn process_api_response(
+    result: Result<async_openai::types::CreateChatCompletionResponse, OpenAIError>,
+    logger: Option<&Logger>,
+    prompt: &str,
+    target_language: &str,
+) -> TranslationResult {
     match result {
         Ok(response) => {
             if let Some(choice) = response.choices.first() {
                 if let Some(translated_text) = &choice.message.content {
-                    Ok(translated_text.trim().to_string())
+                    let response_text = translated_text.trim().to_string();
+                    
+                    // Log the translation if logger is available
+                    if let Some(logger) = logger {
+                        logger.log_translation(prompt, &response_text, target_language);
+                    }
+                    
+                    Ok(response_text)
                 } else {
                     Err("API returned no translation content.".to_string())
                 }
@@ -123,6 +146,7 @@ pub async fn request_translation(
     model_version: String,
     label_to_update: Label,
     cancel_receiver: Option<oneshot::Receiver<()>>,
+    logger: Option<Logger>,
 ) {
     // Update UI to show translation in progress
     label_to_update.set_label(&format!("Translating to {}...", target_language));
@@ -135,6 +159,7 @@ pub async fn request_translation(
         api_url,
         model_version,
         cancel_receiver,
+        logger.as_ref(),
     )
     .await
     {

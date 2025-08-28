@@ -17,6 +17,7 @@ type LanguageButtonsVec = Vec<(Language, LanguageButtonRc)>;
 
 use crate::clone;
 use crate::config::Config; // Import Config struct
+use crate::logger::Logger;
 use crate::settings; // Import settings module
 use crate::translation::request_translation; // Import the clone macro
 
@@ -75,6 +76,10 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     // --- State Management ---
     // Use the initial config passed from main
     let config_rc = Rc::new(RefCell::new(initial_config));
+
+    // Create logger based on debug flag
+    let logger = Logger::new(config_rc.borrow().debug);
+    let logger_rc = Rc::new(logger);
 
     // Load last target language (now lingua::Language) from settings
     let last_target_language = settings::load_last_language();
@@ -177,6 +182,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     let config_rc_clone_init = config_rc.clone(); // Clone the config Rc
     let detector_clone_init = detector.clone(); // Clone detector for the async block
     let language_buttons_rc_clone_init = language_buttons_rc.clone(); // Clone buttons Vec Rc
+    let logger_rc_clone_init = logger_rc.clone(); // Clone logger Rc
 
     glib::spawn_future_local(async move {
         // 1. Read API Key once (still reading from env var for now)
@@ -340,6 +346,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 };
 
                 let api_key_clone = api_key_rc_clone_init.borrow().clone();
+                let logger_clone = logger_rc_clone_init.clone();
                 if let Some(key) = api_key_clone.as_ref() {
                     request_translation(
                         text,
@@ -349,6 +356,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                         model_version,
                         label_clone_init,
                         None, // No cancellation for initial translation
+                        Some((*logger_clone).clone()),
                     )
                     .await;
                 } else {
@@ -403,6 +411,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
         let key_rc = api_key_rc.clone();
         let label_clone = label.clone();
         let cancel_sender_rc_clone = cancel_sender_rc.clone(); // Clone cancel sender
+        let logger_rc_handler = logger_rc.clone(); // Clone logger Rc
         // Clone the Rc to the button vector for use inside the closure
         let all_buttons_rc_clone = all_buttons_rc.clone();
 
@@ -464,6 +473,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                             model_version,
                             label_clone.clone(),
                             Some(cancel_rx), // Pass cancellation receiver
+                            Some((*logger_rc_handler).clone()),
                         ));
                     } else {
                          println!("No original text or API key available to translate.");

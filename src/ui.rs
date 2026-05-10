@@ -3,13 +3,44 @@ use gtk::{
     gdk, glib, Align, Application, ApplicationWindow, Box as GtkBox, Button, Label, Orientation,
     ToggleButton,
 };
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::env;
 use std::rc::Rc;
 use tokio::time::{timeout, Duration};
 use tokio::sync::oneshot;
 // Use lingua::Language directly
 use lingua::{Language, LanguageDetectorBuilder};
+
+/// Select the API key environment variable based on the API URL.
+/// Returns (key, provider_name) on success, or None with the expected env var name.
+fn resolve_api_key(api_url: &str) -> Result<(String, String), String> {
+    let lowered = api_url.to_lowercase();
+
+    let (env_var, provider_name) = if lowered.contains("moonshot") {
+        ("MOONSHOT_API_KEY", "moonshot")
+    } else if lowered.contains("ollama") {
+        ("OLLAMA_API_KEY", "ollama")
+    } else if lowered.contains("deepseek") {
+        ("DEEPSEEK_API_KEY", "deepseek")
+    } else if lowered.contains("openai") {
+        ("OPENAI_API_KEY", "openai")
+    } else {
+        // Fallback for OpenRouter and other OpenAI-compatible providers
+        ("OPENROUTER_API_KEY", "openrouter")
+    };
+
+    match env::var(env_var) {
+        Ok(key) if !key.trim().is_empty() => Ok((key, provider_name.to_string())),
+        Ok(_) => Err(format!(
+            "{} environment variable is set but empty.",
+            env_var
+        )),
+        Err(_) => Err(format!(
+            "{} environment variable not set.\nDetected provider: {}\nExpected env var: {}",
+            env_var, provider_name, env_var
+        )),
+    }
+}
 
 // Type aliases to reduce complexity
 type LanguageButtonRc = Rc<RefCell<ToggleButton>>;
@@ -85,7 +116,9 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     let last_target_language = settings::load_last_language();
     let original_clipboard_text = Rc::new(RefCell::new(None::<String>));
     let api_key_rc = Rc::new(RefCell::new(None::<String>)); // Keep API key separate
+    let provider_name_rc = Rc::new(RefCell::new(String::new())); // Detected provider name
     let cancel_sender_rc = Rc::new(RefCell::new(None::<oneshot::Sender<()>>)); // For cancellation
+    let translation_generation: Rc<Cell<u64>> = Rc::new(Cell::new(0));
 
     // --- Lingua Detector ---
     // Only load languages we need for detection from config
@@ -163,13 +196,31 @@ pub fn build_ui(app: &Application, initial_config: Config) {
 
     // Copy & Close button (standard button)
     let copy_button = Button::with_label("Copy & Close");
+    let close_button = Button::with_label("Close");
 
     content_vbox.append(&label);
     content_vbox.append(&copy_button);
+    content_vbox.append(&close_button);
 
     // Add language buttons and content box to the main box
     main_vbox.append(&lang_hbox);
     main_vbox.append(&content_vbox);
+
+    // --- Status bar label ---
+    let status_label = Label::builder()
+        .label("")
+        .halign(Align::Start)
+        .build();
+    status_label.add_css_class("status-label");
+
+    // Outer box to hold main content + status bar
+    let outer_vbox = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(0)
+        .build();
+    main_vbox.set_vexpand(true);
+    outer_vbox.append(&main_vbox);
+    outer_vbox.append(&status_label);
 
     // --- Initial Load & Translation ---
     let display = gdk::Display::default().expect("Could not get default display");
@@ -181,21 +232,35 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     let api_key_rc_clone_init = api_key_rc.clone();
     let config_rc_clone_init = config_rc.clone(); // Clone the config Rc
     let detector_clone_init = detector.clone(); // Clone detector for the async block
+    let provider_name_rc_clone_init = provider_name_rc.clone(); // Clone provider name Rc
     let language_buttons_rc_clone_init = language_buttons_rc.clone(); // Clone buttons Vec Rc
     let logger_rc_clone_init = logger_rc.clone(); // Clone logger Rc
+    let translation_generation_clone_init = translation_generation.clone();
 
+    // Set up cancellation channel for the initial translation
+    let (cancel_tx, cancel_rx) = oneshot::channel();
+    *cancel_sender_rc.borrow_mut() = Some(cancel_tx);
+    let initial_generation = {
+        let gen = translation_generation.get() + 1;
+        translation_generation.set(gen);
+        gen
+    };
+
+    let status_label_for_async = status_label.clone();
     glib::spawn_future_local(async move {
-        // 1. Read API Key once (still reading from env var for now)
-        match env::var("OPENROUTER_API_KEY") {
-            Ok(key) => {
+        // 1. Resolve API key based on the configured API URL
+        let api_url_for_key = {
+            let config = config_rc_clone_init.borrow();
+            config.api_url.clone()
+        };
+        match resolve_api_key(&api_url_for_key) {
+            Ok((key, provider)) => {
                 *api_key_rc_clone_init.borrow_mut() = Some(key);
+                *provider_name_rc_clone_init.borrow_mut() = provider;
             }
-            Err(_) => {
-                label_clone_init
-                    .set_text("Error: OPENROUTER_API_KEY environment variable not set.");
-                // Update button state even on error (show last language from settings)
-                let lang_to_show = last_target_language; // Use last_target_language (lingua::Language) from settings
-                                                         // Use the imported clone macro
+            Err(msg) => {
+                label_clone_init.set_text(&format!("Error: {}", msg));
+                let lang_to_show = last_target_language;
                 glib::idle_add_local_once(
                     clone!(@strong language_buttons_rc_clone_init => move || {
                         update_active_button_simple(lang_to_show, &language_buttons_rc_clone_init.borrow());
@@ -346,7 +411,9 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 };
 
                 let api_key_clone = api_key_rc_clone_init.borrow().clone();
+                let provider_name_clone = provider_name_rc_clone_init.borrow().clone();
                 let logger_clone = logger_rc_clone_init.clone();
+                let status_label_clone_init = status_label_for_async.clone();
                 if let Some(key) = api_key_clone.as_ref() {
                     request_translation(
                         text,
@@ -354,9 +421,13 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                         key.clone(),
                         api_url,
                         model_version,
+                        provider_name_clone,
                         label_clone_init,
-                        None, // No cancellation for initial translation
+                        status_label_clone_init,
+                        Some(cancel_rx),
                         Some((*logger_clone).clone()),
+                        initial_generation,
+                        translation_generation_clone_init,
                     )
                     .await;
                 } else {
@@ -393,25 +464,29 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Clipboard Translator")
-        .child(&main_vbox)
-        .default_width(450)
-        .default_height(400) // Adjusted default height slightly
+        .child(&outer_vbox)
+        .default_width(900)
+        .default_height(800)
         .build();
 
     // --- Language Button Toggle Handlers ---
     // Define the handler logic once
     let create_lang_button_handler =
         |
-        button_lang: Language, // The language this specific button represents (lingua::Language)
-        all_buttons_rc: Rc<RefCell<LanguageButtonsVec>> // Rc to the Vec of all buttons
+        button_lang: Language,
+        all_buttons_rc: Rc<RefCell<LanguageButtonsVec>>,
+        status_lbl: Label,
     | {
+        let status_label_for_handler = status_lbl;
         // Clone necessary items for the handler closure
         let config_rc_handler = config_rc.clone(); // Clone config Rc
         let text_rc = original_clipboard_text.clone();
         let key_rc = api_key_rc.clone();
+        let provider_name_rc_handler = provider_name_rc.clone(); // Clone provider name Rc
         let label_clone = label.clone();
         let cancel_sender_rc_clone = cancel_sender_rc.clone(); // Clone cancel sender
         let logger_rc_handler = logger_rc.clone(); // Clone logger Rc
+        let translation_generation_handler = translation_generation.clone();
         // Clone the Rc to the button vector for use inside the closure
         let all_buttons_rc_clone = all_buttons_rc.clone();
 
@@ -464,6 +539,17 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                         let (cancel_tx, cancel_rx) = oneshot::channel();
                         *cancel_sender_rc_clone.borrow_mut() = Some(cancel_tx);
 
+                        let provider_name = provider_name_rc_handler.borrow().clone();
+
+                        // Increment generation and pass to the new translation
+                        let new_generation = {
+                            let gen = translation_generation_handler.get() + 1;
+                            translation_generation_handler.set(gen);
+                            gen
+                        };
+                        let current_gen_clone = translation_generation_handler.clone();
+
+                        let status_label_clone2 = status_label_for_handler.clone();
                         // Spawn a new future for the translation request
                         glib::spawn_future_local(request_translation(
                             text,
@@ -471,9 +557,13 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                             key,
                             api_url,
                             model_version,
+                            provider_name,
                             label_clone.clone(),
+                            status_label_clone2,
                             Some(cancel_rx), // Pass cancellation receiver
                             Some((*logger_rc_handler).clone()),
+                            new_generation,
+                            current_gen_clone,
                         ));
                     } else {
                          println!("No original text or API key available to translate.");
@@ -524,7 +614,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
         for (lang, button_rc) in buttons.iter() {
             button_rc.borrow().connect_toggled(
                 // Create a unique handler closure for each button
-                create_lang_button_handler(*lang, language_buttons_rc.clone()),
+                create_lang_button_handler(*lang, language_buttons_rc.clone(), status_label.clone()),
             );
         }
     } // Borrow drops here
@@ -540,6 +630,24 @@ pub fn build_ui(app: &Application, initial_config: Config) {
         println!("Copied to clipboard and closing: {}", text_to_copy);
         window_clone_copy.close();
     });
+
+    // --- Close Button Click Handler Setup ---
+    let window_clone_close = window.clone();
+    close_button.connect_clicked(move |_button| {
+        println!("Closing without copying");
+        window_clone_close.close();
+    });
+
+    // Add CSS styling for the status label
+    let css_provider = gtk::CssProvider::new();
+    css_provider.load_from_string(
+        ".status-label { font-size: 12px; color: #888; padding: 4px 12px; border-top: 1px solid #444; }"
+    );
+    gtk::style_context_add_provider_for_display(
+        &gdk::Display::default().expect("Could not get default display"),
+        &css_provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
 
     // Present window
     window.present();

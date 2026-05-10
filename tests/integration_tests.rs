@@ -64,6 +64,7 @@ async fn test_translation_workflow() {
             "test-key".to_string(),
             "http://127.0.0.1:9999".to_string(),
             "test-model".to_string(),
+            "openrouter",
             None, // No cancellation for tests
             None, // No logger for tests
         )
@@ -178,6 +179,7 @@ async fn test_error_handling_integration() {
         "".to_string(), // Empty API key
         "http://invalid.url".to_string(),
         "invalid-model".to_string(),
+        "openrouter",
         None, // No cancellation for tests
         None, // No logger for tests
     )

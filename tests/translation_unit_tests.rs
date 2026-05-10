@@ -2,14 +2,17 @@ use lingua::Language;
 use tokio::time::{timeout, Duration};
 use translator::translate_text;
 
+const TEST_PROVIDER: &str = "openrouter";
+
 #[tokio::test]
 async fn test_empty_text() {
     let result = translate_text(
         "",
         Language::Spanish,
         "test-key".to_string(),
-        "http://127.0.0.1:9999".to_string(), // Use local unreachable address
+        "http://127.0.0.1:9999".to_string(),
         "gpt-3.5-turbo".to_string(),
+        TEST_PROVIDER,
         None, // No cancellation for tests
         None, // No logger for tests
     )
@@ -27,6 +30,7 @@ async fn test_whitespace_only_text() {
         "test-key".to_string(),
         "http://127.0.0.1:9999".to_string(),
         "gpt-3.5-turbo".to_string(),
+        TEST_PROVIDER,
         None, // No cancellation for tests
         None, // No logger for tests
     )
@@ -42,8 +46,9 @@ async fn test_network_error_with_timeout() {
         "Hello, world!",
         Language::German,
         "test-key".to_string(),
-        "http://127.0.0.1:9999".to_string(), // Local unreachable address
+        "http://127.0.0.1:9999".to_string(),
         "gpt-3.5-turbo".to_string(),
+        TEST_PROVIDER,
         None, // No cancellation for tests
         None, // No logger for tests
     );
@@ -75,6 +80,7 @@ async fn test_single_language() {
         "test-key".to_string(),
         "http://127.0.0.1:9999".to_string(),
         "gpt-3.5-turbo".to_string(),
+        TEST_PROVIDER,
         None, // No cancellation for tests
         None, // No logger for tests
     );
@@ -103,6 +109,7 @@ async fn test_multiple_languages_with_timeout() {
             "test-key".to_string(),
             "http://127.0.0.1:9999".to_string(),
             "gpt-3.5-turbo".to_string(),
+            TEST_PROVIDER,
             None, // No cancellation for tests
             None, // No logger for tests
         );
@@ -123,13 +130,14 @@ async fn test_multiple_languages_with_timeout() {
 
 #[tokio::test]
 async fn test_long_text() {
-    let long_text = "Lorem ipsum ".repeat(50); // Reduced repetitions
+    let long_text = "Lorem ipsum ".repeat(50);
     let future = translate_text(
         &long_text,
         Language::Spanish,
         "test-key".to_string(),
         "http://127.0.0.1:9999".to_string(),
         "gpt-3.5-turbo".to_string(),
+        TEST_PROVIDER,
         None, // No cancellation for tests
         None, // No logger for tests
     );

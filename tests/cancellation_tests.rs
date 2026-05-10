@@ -3,6 +3,8 @@ use tokio::sync::oneshot;
 use tokio::time::{timeout, Duration};
 use translator::translate_text;
 
+const TEST_PROVIDER: &str = "openrouter";
+
 #[tokio::test]
 async fn test_translation_cancellation() {
     // Create a cancellation channel
@@ -15,6 +17,7 @@ async fn test_translation_cancellation() {
         "test-key".to_string(),
         "http://127.0.0.1:9999".to_string(), // Unreachable URL to simulate long request
         "gpt-3.5-turbo".to_string(),
+        TEST_PROVIDER,
         Some(cancel_rx),
         None, // No logger for tests
     );
@@ -48,6 +51,7 @@ async fn test_translation_without_cancellation() {
         "test-key".to_string(),
         "http://127.0.0.1:9999".to_string(),
         "gpt-3.5-turbo".to_string(),
+        TEST_PROVIDER,
         None, // No cancellation
         None, // No logger for tests
     )

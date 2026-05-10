@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_description">Позволяет переводить выделенный текст в любом приложении. Выделите текст — перевод откроется в плавающей панели.</string>
+</resources>

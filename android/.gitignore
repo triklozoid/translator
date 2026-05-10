@@ -1,0 +1,10 @@
+sdk/
+.gradle/
+.kotlin/
+build/
+local.properties
+*.apk
+gradlew
+gradlew.bat
+gradle/wrapper/gradle-wrapper.jar
+gradle/wrapper/gradle-wrapper.properties

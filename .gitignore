@@ -37,3 +37,13 @@ config.toml.local
 test-output/
 
 .aider*
+
+# Android
+android/sdk/
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+android/*.apk
+android/*.aab

@@ -7,7 +7,7 @@ edition = "2021"
 gtk = { version = "0.9.6", package = "gtk4", features = ["v4_14"] }
 futures-util = "0.3"
 # Added for API calls and async runtime
-llm-connector = "0.5"
+llm-connector = { version = "0.5", features = ["streaming"] }
 tokio = { version = "1", features = ["full"] } # Use "full" or specific features like "macros", "rt-multi-thread"
 dotenvy = "0.15" # For reading .env files (optional but good practice)
 lingua = { version = "1.7.0", features = ["english", "french", "italian", "polish", "russian", "portuguese", "ukrainian", "german", "spanish"] } # Added more languages for testing

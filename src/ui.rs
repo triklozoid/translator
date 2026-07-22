@@ -1,7 +1,7 @@
 use gtk::prelude::*;
 use gtk::{
-    gdk, glib, Align, Application, ApplicationWindow, Box as GtkBox, Button, Label, Orientation,
-    ToggleButton,
+    gdk, glib, Align, Application, ApplicationWindow, Box as GtkBox, Button, Label,
+    Orientation, ScrolledWindow, ToggleButton,
 };
 use std::cell::{Cell, RefCell};
 use std::env;
@@ -119,6 +119,10 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     let provider_name_rc = Rc::new(RefCell::new(String::new())); // Detected provider name
     let cancel_sender_rc = Rc::new(RefCell::new(None::<oneshot::Sender<()>>)); // For cancellation
     let translation_generation: Rc<Cell<u64>> = Rc::new(Cell::new(0));
+    // In-memory current target language — single source of truth, avoids disk I/O races
+    let current_target: Rc<Cell<Language>> = Rc::new(Cell::new(last_target_language));
+    // Suppress toggle signals during programmatic button state changes
+    let suppress_toggles: Rc<Cell<bool>> = Rc::new(Cell::new(false));
 
     // --- Lingua Detector ---
     // Only load languages we need for detection from config
@@ -181,10 +185,11 @@ pub fn build_ui(app: &Application, initial_config: Config) {
         }
     } // Mutable borrow of language_buttons_rc drops here
 
-    // Vertical box for content (label + copy button)
+    // Vertical box for content (scrolled label + copy button)
     let content_vbox = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(10)
+        .vexpand(true)
         .build();
 
     // Label for translation output
@@ -192,13 +197,30 @@ pub fn build_ui(app: &Application, initial_config: Config) {
         .label("Reading clipboard...")
         .wrap(true)
         .selectable(true)
+        .halign(Align::Start)
+        .valign(Align::Start)
+        .xalign(0.0)
         .build();
+
+    // Wrap label in a ScrolledWindow so long translations don't overflow
+    // the window and appear to "freeze" when new text is added below the viewport.
+    // CRITICAL: hscrollbar_policy=Never prevents a GTK layout feedback loop:
+    // with wrap=true on the label, a vertical scrollbar appearing/disappearing
+    // changes available width → label re-wraps → height changes → scrollbar
+    // toggles again → infinite resize cycle → GLib main loop stalls.
+    let scrolled = ScrolledWindow::builder()
+        .vexpand(true)
+        .hexpand(true)
+        .min_content_height(200)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .build();
+    scrolled.set_child(Some(&label));
 
     // Copy & Close button (standard button)
     let copy_button = Button::with_label("Copy & Close");
     let close_button = Button::with_label("Close");
 
-    content_vbox.append(&label);
+    content_vbox.append(&scrolled);
     content_vbox.append(&copy_button);
     content_vbox.append(&close_button);
 
@@ -236,6 +258,8 @@ pub fn build_ui(app: &Application, initial_config: Config) {
     let language_buttons_rc_clone_init = language_buttons_rc.clone(); // Clone buttons Vec Rc
     let logger_rc_clone_init = logger_rc.clone(); // Clone logger Rc
     let translation_generation_clone_init = translation_generation.clone();
+    let current_target_clone_init = current_target.clone();
+    let suppress_toggles_clone_init = suppress_toggles.clone();
 
     // Set up cancellation channel for the initial translation
     let (cancel_tx, cancel_rx) = oneshot::channel();
@@ -397,10 +421,15 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                     println!("Target language remains: {:?}", final_target_lang);
                 }
 
+                // Update in-memory state to match auto-detected language
+                current_target_clone_init.set(final_target_lang);
+
                 // Update buttons in the main thread (always run this to set initial state correctly based on final_target_lang)
+                suppress_toggles_clone_init.set(true);
                 glib::idle_add_local_once(
-                    clone!(@strong language_buttons_rc_clone_init => move || {
+                    clone!(language_buttons_rc_clone_init, suppress_toggles_clone_init => move || {
                         update_active_button_simple(final_target_lang, &language_buttons_rc_clone_init.borrow());
+                        suppress_toggles_clone_init.set(false);
                     }),
                 );
 
@@ -438,10 +467,12 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 label_clone_init.set_text("Clipboard does not contain text.");
                 *original_text_rc_clone_init.borrow_mut() = None; // Ensure it's None
                                                                   // Update button state even if clipboard is empty
-                let lang_to_show = last_target_language; // Use last_target_language from settings
+                let lang_to_show = current_target_clone_init.get();
+                suppress_toggles_clone_init.set(true);
                 glib::idle_add_local_once(
-                    clone!(@strong language_buttons_rc_clone_init => move || {
+                    clone!(language_buttons_rc_clone_init, suppress_toggles_clone_init => move || {
                         update_active_button_simple(lang_to_show, &language_buttons_rc_clone_init.borrow());
+                        suppress_toggles_clone_init.set(false);
                     }),
                 );
             }
@@ -450,10 +481,12 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 label_clone_init.set_text(&format!("Error reading clipboard: {}", e));
                 *original_text_rc_clone_init.borrow_mut() = None; // Ensure it's None
                                                                   // Update button state even on error
-                let lang_to_show = last_target_language; // Use last_target_language from settings
+                let lang_to_show = current_target_clone_init.get();
+                suppress_toggles_clone_init.set(true);
                 glib::idle_add_local_once(
-                    clone!(@strong language_buttons_rc_clone_init => move || {
+                    clone!(language_buttons_rc_clone_init, suppress_toggles_clone_init => move || {
                         update_active_button_simple(lang_to_show, &language_buttons_rc_clone_init.borrow());
+                        suppress_toggles_clone_init.set(false);
                     }),
                 );
             }
@@ -468,6 +501,14 @@ pub fn build_ui(app: &Application, initial_config: Config) {
         .default_width(900)
         .default_height(800)
         .build();
+
+    // Quit the application when the window is closed (X button),
+    // otherwise GTK4 just hides it and the process keeps running.
+    let app_for_close = app.clone();
+    window.connect_close_request(move |_window| {
+        app_for_close.quit();
+        glib::Propagation::Proceed
+    });
 
     // --- Language Button Toggle Handlers ---
     // Define the handler logic once
@@ -487,18 +528,26 @@ pub fn build_ui(app: &Application, initial_config: Config) {
         let cancel_sender_rc_clone = cancel_sender_rc.clone(); // Clone cancel sender
         let logger_rc_handler = logger_rc.clone(); // Clone logger Rc
         let translation_generation_handler = translation_generation.clone();
+        let suppress_toggles_handler = suppress_toggles.clone();
+        let current_target_handler = current_target.clone();
         // Clone the Rc to the button vector for use inside the closure
         let all_buttons_rc_clone = all_buttons_rc.clone();
 
         move |toggled_button: &ToggleButton| {
+            // Bail out immediately if toggles are being suppressed (programmatic change)
+            if suppress_toggles_handler.get() {
+                return;
+            }
             // Check if the button *became* active.
             if toggled_button.is_active() {
-                // Get the previously selected language from settings
-                let previously_selected_lang = settings::load_last_language();
+                // Get the previously selected language from in-memory state
+                let previously_selected_lang = current_target_handler.get();
 
                 // Only trigger if the language actually changed by user click
                 if button_lang != previously_selected_lang {
-                    // Save the new language to settings
+                    // Update in-memory state immediately (before disk I/O)
+                    current_target_handler.set(button_lang);
+                    // Save the new language to settings (disk I/O as side effect)
                     if let Err(e) = settings::save_last_language(button_lang) {
                         eprintln!("Failed to save last language after user selection: {}", e);
                     } else {
@@ -511,13 +560,15 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                         (config.api_url.clone(), config.model_version.clone())
                     };
 
-                    // Deactivate other buttons (visually)
+                    // Deactivate other buttons (visually) — suppress cascading toggle signals
+                    suppress_toggles_handler.set(true);
                     let all_buttons = all_buttons_rc_clone.borrow(); // Borrow immutably
                     for (lang, other_btn_rc) in all_buttons.iter() {
                         if *lang != button_lang && other_btn_rc.borrow().is_active() {
                             other_btn_rc.borrow().set_active(false);
                         }
                     }
+                    suppress_toggles_handler.set(false);
                     // Ensure the clicked button remains active (might be redundant but safe)
                     if !toggled_button.is_active() {
                          toggled_button.set_active(true);
@@ -572,12 +623,14 @@ pub fn build_ui(app: &Application, initial_config: Config) {
                 } else {
                     // This handles the case where the button was already active (e.g., set by initial load or auto-switch)
                     // and the user clicks it again. We still need to ensure other buttons are off.
+                    suppress_toggles_handler.set(true);
                     let all_buttons = all_buttons_rc_clone.borrow();
                     for (lang, other_btn_rc) in all_buttons.iter() {
                         if *lang != button_lang && other_btn_rc.borrow().is_active() {
                             other_btn_rc.borrow().set_active(false);
                         }
                     }
+                    suppress_toggles_handler.set(false);
                      // Ensure the clicked button *is* active if it wasn't already
                     if !toggled_button.is_active() {
                          toggled_button.set_active(true);
@@ -586,7 +639,7 @@ pub fn build_ui(app: &Application, initial_config: Config) {
             } else {
                 // This block handles the case where the user tries to deactivate the *currently active* button.
                 // We want to prevent this, ensuring one button is always selected.
-                 if button_lang == settings::load_last_language() {
+                 if button_lang == current_target_handler.get() {
                      // Find the Rc for *this* button to re-activate it
                      let maybe_button_rc = all_buttons_rc_clone.borrow().iter()
                          .find(|(lang, _)| *lang == button_lang)
@@ -621,21 +674,21 @@ pub fn build_ui(app: &Application, initial_config: Config) {
 
     // --- Copy Button Click Handler Setup ---
     let label_clone_copy = label.clone();
-    let window_clone_copy = window.clone();
+    let app_clone_copy = app.clone();
     let clipboard_copy = display.clipboard();
 
     copy_button.connect_clicked(move |_button| {
         let text_to_copy = label_clone_copy.text();
         clipboard_copy.set_text(&text_to_copy);
         println!("Copied to clipboard and closing: {}", text_to_copy);
-        window_clone_copy.close();
+        app_clone_copy.quit();
     });
 
     // --- Close Button Click Handler Setup ---
-    let window_clone_close = window.clone();
+    let app_clone_close = app.clone();
     close_button.connect_clicked(move |_button| {
         println!("Closing without copying");
-        window_clone_close.close();
+        app_clone_close.quit();
     });
 
     // Add CSS styling for the status label

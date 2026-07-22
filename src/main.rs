@@ -1,5 +1,6 @@
 // Declare modules
 mod config;
+mod diagnostics;
 mod logger;
 mod settings;
 mod translation;
@@ -37,6 +38,14 @@ async fn main() -> glib::ExitCode {
     
     // Load environment variables from .env file if present
     dotenv().ok(); // This is still useful for API keys, etc.
+
+    crate::diagnostics::log_diag("=== translator started ===");
+
+    // Register the SSE diagnostic logger so library-level diagnostics
+    // ([SSE] chunk, [SSE] event) are captured into app.log.
+    llm_connector::sse::set_sse_diag_logger(|msg| {
+        crate::diagnostics::log_diag(msg);
+    });
 
     // Load configuration from file (or defaults if not found/invalid)
     let mut config = config::load_config();
